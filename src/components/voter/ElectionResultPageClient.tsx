@@ -187,6 +187,17 @@ export default function ElectionResultPageClient({
 
   if (phase === "upcoming" || phase === "voting") {
     return (
+      <div
+    style={{
+      minHeight: "100vh",
+      backgroundImage: "url('/Background2.jpg')",
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+      backgroundAttachment: "fixed",
+      backgroundRepeat: "no-repeat",
+      padding: "32px",
+    }}
+  >
       <section style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         <h1 style={{
           fontFamily: "var(--font-oswald), sans-serif",
@@ -214,6 +225,7 @@ export default function ElectionResultPageClient({
           </p>
         </div>
       </section>
+      </div>
     );
   }
 
@@ -223,6 +235,17 @@ export default function ElectionResultPageClient({
   const turnoutPct     = totalVoters > 0 ? Math.round((totalVotesCast / totalVoters) * 100) : 0;
 
   return (
+    <div
+    style={{
+      minHeight: "100vh",
+      backgroundImage: "url('/Background2.jpg')",
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+      backgroundAttachment: "fixed",
+      backgroundRepeat: "no-repeat",
+      padding: "32px",
+    }}
+  >
     <section style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
 
       {/* Header */}
@@ -342,5 +365,6 @@ export default function ElectionResultPageClient({
       })}
 
     </section>
+      </div>
   );
 }

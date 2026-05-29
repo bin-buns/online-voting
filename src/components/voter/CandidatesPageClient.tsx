@@ -310,8 +310,19 @@ export default function CandidatesPageClient({
   const [selected, setSelected] = useState<Candidate | null>(null);
 
   return (
+    <div
+  style={{
+    minHeight: "100vh",
+    backgroundImage: "url('/Background2.jpg')",
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundAttachment: "fixed",
+    backgroundRepeat: "no-repeat",
+    padding: "32px",
+  }}
+>
     <section style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
-
+      
       <h1 style={{
         fontFamily: "var(--font-oswald), sans-serif",
         fontSize: "22px", fontWeight: 700,
@@ -389,5 +400,6 @@ export default function CandidatesPageClient({
         />
       )}
     </section>
-  );
+    </div>
+);
 }

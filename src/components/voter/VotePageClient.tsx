@@ -236,6 +236,17 @@ export default function VotePageClient({
 
   if (phase === "upcoming") {
     return (
+      <div
+        style={{
+          minHeight: "100vh",
+          backgroundImage: "url('/Background2.jpg')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundAttachment: "fixed",
+          backgroundRepeat: "no-repeat",
+          padding: "32px",
+        }}
+      >
       <section style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         <h1 style={{ fontFamily: "var(--font-oswald), sans-serif", fontSize: "22px", fontWeight: 700, color: "#0d6b34", letterSpacing: "0.04em", textTransform: "uppercase", margin: 0 }}>
           Vote
@@ -250,11 +261,23 @@ export default function VotePageClient({
           </p>
         </div>
       </section>
+      </div>
     );
   }
 
   if (phase === "closed" || phase === "results") {
     return (
+      <div
+        style={{
+          minHeight: "100vh",
+          backgroundImage: "url('/Background2.jpg')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundAttachment: "fixed",
+          backgroundRepeat: "no-repeat",
+          padding: "32px",
+        }}
+      >
       <section style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         <h1 style={{ fontFamily: "var(--font-oswald), sans-serif", fontSize: "22px", fontWeight: 700, color: "#0d6b34", letterSpacing: "0.04em", textTransform: "uppercase", margin: 0 }}>
           Vote
@@ -269,12 +292,24 @@ export default function VotePageClient({
           </p>
         </div>
       </section>
+      </div>
     );
   }
 
   // ── Voting UI (phase === "voting") ────────────────────────────────────────
 
   return (
+    <div
+        style={{
+          minHeight: "100vh",
+          backgroundImage: "url('/Background2.jpg')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundAttachment: "fixed",
+          backgroundRepeat: "no-repeat",
+          padding: "32px",
+        }}
+      >
     <section style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
 
       {/* Header */}
@@ -505,5 +540,6 @@ export default function VotePageClient({
         />
       )}
     </section>
+      </div>
   );
 }
