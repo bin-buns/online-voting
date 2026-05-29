@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Theresian School of Cavite">
+  <circle cx="60" cy="60" r="56" fill="#fff" stroke="#0d6b34" stroke-width="3"/>
+  <circle cx="60" cy="60" r="46" fill="#0d6b34"/>
+  <circle cx="60" cy="60" r="36" fill="#f4d03f"/>
+  <circle cx="60" cy="60" r="26" fill="#fff"/>
+  <text x="60" y="52" text-anchor="middle" fill="#0d6b34" font-family="Georgia,serif" font-size="9" font-weight="700">TSC</text>
+  <text x="60" y="68" text-anchor="middle" fill="#0d6b34" font-family="Georgia,serif" font-size="7">CAVITE</text>
+</svg>
