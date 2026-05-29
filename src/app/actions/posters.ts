@@ -1,3 +1,5 @@
+import { createClient } from "@/lib/supabase/server";
+
 export type PosterWithCandidate = {
   id: string;
   title: string;
@@ -14,3 +16,23 @@ export type PosterWithCandidate = {
     };
   };
 };
+
+export async function getAllCampaignPosters(): Promise<PosterWithCandidate[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("campaign_posts")
+    .select(`
+      id, title, content, image_url, created_at,
+      candidate:candidates (
+        photo_url,
+        profile:profiles ( full_name ),
+        position:positions ( name )
+      )
+    `)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+
+  return data as unknown as PosterWithCandidate[];
+}
