@@ -171,10 +171,8 @@ function PostModal({ post, onClose }: { post: Post; onClose: () => void }) {
 
 export default function VoterDashboardClient({
   initialPosts,
-  phase,
 }: {
   initialPosts: Post[];
-  phase: string;
 }) {
   const [posts, setPosts]       = useState<Post[]>(initialPosts);
   const [selected, setSelected] = useState<Post | null>(null);
