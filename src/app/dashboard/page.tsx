@@ -178,7 +178,7 @@ export default async function VoterDashboardPage() {
           padding: "2rem 1.5rem",
           minHeight: "100vh",
         }}>
-          <VoterDashboardClient initialPosts={posts} phase={phase} />
+          <VoterDashboardClient initialPosts={posts} />
         </div>
 
       </div>
