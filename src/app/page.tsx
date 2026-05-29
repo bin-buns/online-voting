@@ -24,7 +24,7 @@ export default function HomePage() {
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center gap-4 px-4 text-center">
         <Image
-          src="/logo.png"
+          src="/Background.jpg"
           alt="Theresian School of Cavite"
           width={80}
           height={80}
