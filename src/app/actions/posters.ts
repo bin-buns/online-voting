@@ -4,8 +4,13 @@ export type PosterWithCandidate = {
   content: string;
   image_url: string | null;
   created_at: string;
-  candidate_id: string;
-  author: string;
-  position: string;
-  photo_url: string | null;
+  candidate: {
+    photo_url: string | null;
+    profile: {
+      full_name: string;
+    };
+    position: {
+      name: string;
+    };
+  };
 };
