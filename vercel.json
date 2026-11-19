@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/election-reminders",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
