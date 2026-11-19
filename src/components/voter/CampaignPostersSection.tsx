@@ -40,9 +40,9 @@ export default function CampaignPostersSection() {
       {/* Section Header */}
       <div className="section-header">
         <div>
-          <h2 className="section-title">📣 Campaign Posters</h2>
+          <h2 className="section-title"><i className="ti ti-speakerphone" aria-hidden="true" /> Campaign Messages</h2>
           <p className="section-subtitle">
-            See what each candidate stands for before you vote.
+            Review each candidate’s priorities, plans, and platform before you vote.
           </p>
         </div>
         {!loading && posters.length > 0 && (
@@ -120,7 +120,11 @@ export default function CampaignPostersSection() {
           font-weight: 800;
           color: #111827;
           margin: 0 0 4px;
+          display: flex;
+          align-items: center;
+          gap: 9px;
         }
+        .section-title :global(i) { color: #0d6b34; font-size: 21px; }
         .section-subtitle {
           font-size: 13.5px;
           color: #6b7280;
@@ -156,11 +160,11 @@ export default function CampaignPostersSection() {
           white-space: nowrap;
         }
         .filter-tab:hover {
-          border-color: #1a56db;
-          color: #1a56db;
+          border-color: #0d6b34;
+          color: #0d6b34;
         }
         .filter-tab.active {
-          background: linear-gradient(135deg, #1a56db, #7e3af2);
+          background: linear-gradient(135deg, #0d6b34, #24834c);
           color: #fff;
           border-color: transparent;
         }
@@ -216,7 +220,7 @@ export default function CampaignPostersSection() {
         .btn-reset {
           background: none;
           border: none;
-          color: #1a56db;
+          color: #0d6b34;
           font-size: 13.5px;
           font-weight: 600;
           cursor: pointer;

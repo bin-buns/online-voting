@@ -13,6 +13,7 @@ type RawCandidate = {
 };
 
 type RawVote = {
+  voter_id: string;
   candidate_id: string | null;
   position_id: string;
 };
@@ -21,7 +22,7 @@ export default async function ElectionResultPage() {
   await requireAuth(["voter", "candidate"]);
   const supabase = await createClient();
 
-  const [settings, { data: candidatesData }, { data: positionsData }, { data: votesData }, { count: totalVoters }] =
+  const [settings, { data: candidatesData }, { data: positionsData }, { data: votesData }, { data: voterRows }] =
     await Promise.all([
       getElectionSettings(),
 
@@ -41,12 +42,12 @@ export default async function ElectionResultPage() {
 
       supabase
         .from("votes")
-        .select("candidate_id, position_id"),
+        .select("voter_id, candidate_id, position_id"),
 
       supabase
         .from("profiles")
-        .select("*", { count: "exact", head: true })
-        .eq("role", "voter"),
+        .select("id")
+        .in("role", ["voter", "candidate"]),
     ]);
 
   const phase = settings ? getElectionPhase(settings) : "upcoming";
@@ -69,6 +70,8 @@ export default async function ElectionResultPage() {
 
   // Tally votes and abstains per candidate and position
   const votes = (votesData as unknown as RawVote[]) ?? [];
+  const totalVoters = voterRows?.length ?? 0;
+  const participatedVoters = new Set(votes.map((vote) => vote.voter_id)).size;
 
   const voteMap: Record<string, number>   = {}; // candidate_id → vote count
   const abstainMap: Record<string, number> = {}; // position_id → abstain count
@@ -88,6 +91,8 @@ export default async function ElectionResultPage() {
       voteMap={voteMap}
       abstainMap={abstainMap}
       totalVoters={totalVoters ?? 0}
+      participatedVoters={participatedVoters}
+      ballotCount={votes.length}
       phase={phase}
       electionTitle={settings?.title ?? "Election"}
     />

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/audit";
+import { getSessionProfile } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
+  const session = await getSessionProfile();
+  if (!session || session.profile.role !== "admin") return NextResponse.json({ error: "Administrator access required." }, { status: 403 });
   try {
     const { student_id } = await req.json();
     if (!student_id)
@@ -12,9 +15,11 @@ export async function POST(req: NextRequest) {
 
     const { data: profile } = await adminClient
       .from("profiles")
-      .select("full_name, student_id")
+      .select("full_name, student_id, role")
       .eq("id", student_id)
       .single();
+
+    if (!profile || !["voter", "candidate"].includes(profile.role)) return NextResponse.json({ error: "Student account not found." }, { status: 404 });
 
     const { error } = await adminClient.auth.admin.deleteUser(student_id);
     if (error)

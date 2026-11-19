@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";
+import { submitCandidacyApplication } from "@/app/actions/candidate";
 
 type Position = { id: string; name: string };
 
@@ -19,9 +20,13 @@ type Props = {
     full_name: string;
     student_id: string;
     strand: string | null;
+    section: string | null;
   };
   positions: Position[];
   existingApplication: ExistingApplication | null;
+  candidacyOpen: boolean;
+  registrationStartsAt: string | null;
+  registrationEndsAt: string | null;
 };
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; label: string; icon: string }> = {
@@ -34,11 +39,33 @@ function getInitials(name: string) {
   return name.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase();
 }
 
-export default function SubmitCandidacyClient({ profile, positions, existingApplication }: Props) {
+function isMatchingStrandPosition(positionName: string, strand: string) {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const aliases: Record<string, string[]> = {
+    ict: ["ict", "informationandcommunicationstechnology", "informationandcommunicationtechnology"],
+    abm: ["abm", "accountancybusinessandmanagement"],
+    stem: ["stem", "science,technology,engineering,andmathematics", "sciencetechnologyengineeringandmathematics"],
+    humss: ["humss", "humanitiesandsocialsciences"],
+    gas: ["gas", "generalacademicstrand"],
+    tvl: ["tvl", "technicalvocationalandlivelihood"],
+  };
+  const position = normalize(positionName);
+  const key = normalize(strand);
+  const known = Object.entries(aliases).find(([shortName, names]) =>
+    key === shortName || names.some((alias) => key.includes(alias))
+  );
+  const choices = known?.[1] ?? [key];
+  return choices.some((alias) => alias && position.includes(alias));
+}
+
+type ApplicationAnswers = { school_year:string; contact_number:string; academic_standing:string; previous_average:string; academic_awards:string; leadership_held:""|"yes"|"no"; leadership_details:string; organizations:string; volunteer_experience:string; why_representative:string; candidate_qualities:string; student_plans:string; represent_student_concerns:string; balance_responsibilities:string; declaration_signature:string; };
+function ApplicationField({label,name,value,onChange,placeholder,multiline=false,required=true,maxLength=500,type="text"}:{label:string;name:keyof ApplicationAnswers;value:string;onChange:(name:keyof ApplicationAnswers,value:string)=>void;placeholder?:string;multiline?:boolean;required?:boolean;maxLength?:number;type?:string}){const style:React.CSSProperties={width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #cbd5e1",fontSize:14,boxSizing:"border-box",fontFamily:"inherit",color:"#1e293b",background:"#fff"};return <label style={{display:"flex",flexDirection:"column",gap:6,fontSize:12,fontWeight:700,color:"#475569"}}>{label}{required&&<span style={{color:"#be123c"}}>*</span>}{multiline?<textarea name={name} value={value} onChange={e=>onChange(name,e.target.value)} placeholder={placeholder} required={required} maxLength={maxLength} rows={3} style={{...style,resize:"vertical",lineHeight:1.5}}/>:<input name={name} type={type} value={value} onChange={e=>onChange(name,e.target.value)} placeholder={placeholder} required={required} maxLength={maxLength} style={style}/>}</label>}
+
+export default function SubmitCandidacyClient({ profile, positions, existingApplication, candidacyOpen, registrationStartsAt, registrationEndsAt }: Props) {
 const defaultPositionId = (() => {
   if (profile.strand) {
     const repPosition = positions.find((p) =>
-      p.name.toLowerCase().includes(profile.strand!.toLowerCase()) &&
+      isMatchingStrandPosition(p.name, profile.strand!) &&
       p.name.toLowerCase().includes("representative")
     );
     if (repPosition) return repPosition.id;
@@ -49,6 +76,8 @@ const defaultPositionId = (() => {
   const [positionId, setPositionId] = useState(defaultPositionId);
   const [tagline, setTagline]       = useState("");
   const [bio, setBio]               = useState("");
+  const [registrationFile, setRegistrationFile] = useState<File | null>(null);
+  const [application, setApplication] = useState<ApplicationAnswers>({school_year:"",contact_number:"",academic_standing:"",previous_average:"",academic_awards:"",leadership_held:"",leadership_details:"",organizations:"",volunteer_experience:"",why_representative:"",candidate_qualities:"",student_plans:"",represent_student_concerns:"",balance_responsibilities:"",declaration_signature:""});
   const [photoFile, setPhotoFile]   = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [agreed, setAgreed]         = useState(false);
@@ -56,6 +85,18 @@ const defaultPositionId = (() => {
   const [error, setError]           = useState("");
   const [submitted, setSubmitted]   = useState(false);
   const [currentApp, setCurrentApp]         = useState(existingApplication);
+  const [applicationOpen, setApplicationOpen] = useState(candidacyOpen);
+
+  useEffect(() => {
+    const update = () => {
+      const now = Date.now();
+      setApplicationOpen(Boolean(registrationStartsAt && registrationEndsAt &&
+        now >= new Date(registrationStartsAt).getTime() && now < new Date(registrationEndsAt).getTime()));
+    };
+    update();
+    const timer = setInterval(update, 15_000);
+    return () => clearInterval(timer);
+  }, [registrationStartsAt, registrationEndsAt]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -109,6 +150,8 @@ const defaultPositionId = (() => {
     return () => { supabase.removeChannel(channel); };
   }, [profile.id]);
 
+  function updateApplication(name:keyof ApplicationAnswers,value:string){setApplication(previous=>({...previous,[name]:name==="leadership_held"?value as ApplicationAnswers["leadership_held"]:value}));}
+
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -120,6 +163,9 @@ const defaultPositionId = (() => {
     if (!agreed) { setError("Please confirm that all information is true and correct."); return; }
     if (!positionId) { setError("Please select a position."); return; }
     if (!tagline.trim()) { setError("Please enter a campaign slogan."); return; }
+    if (!registrationFile) { setError("Upload your official registration form or grade report."); return; }
+    if (application.declaration_signature.trim().toLowerCase() !== profile.full_name.trim().toLowerCase()) { setError("Type your registered full name as your declaration signature."); return; }
+    if (application.leadership_held === "yes" && !application.leadership_details.trim()) { setError("Please describe your previous leadership position."); return; }
 
     setLoading(true);
     setError("");
@@ -147,23 +193,13 @@ const defaultPositionId = (() => {
       photo_url = urlData.publicUrl;
     }
 
-    const { error: insertErr } = await supabase.from("candidates").insert({
-      user_id:     profile.id,
-      position_id: positionId,
-      tagline:     tagline.trim(),
-      bio:         bio.trim() || null,
-      photo_url,
-      status:      "pending",
-    });
-
-    if (insertErr) {
-      setError(insertErr.message);
-      setLoading(false);
-      return;
-    }
-
-    setSubmitted(true);
-    setLoading(false);
+    const formData = new FormData();
+    formData.set("position_id",positionId); formData.set("tagline",tagline.trim()); formData.set("bio",bio.trim()); formData.set("photo_url",photo_url??""); formData.set("registration_form",registrationFile);
+    for(const [key,value] of Object.entries(application))formData.set(key,value);
+    formData.set("declaration_date",new Date().toISOString().slice(0,10));
+    const result=await submitCandidacyApplication(formData);
+    if(!result.ok){setError(result.error);setLoading(false);return;}
+    setSubmitted(true); setLoading(false);
   }
 
   // ── Already submitted view ────────────────────────────────────────────────
@@ -244,6 +280,18 @@ const defaultPositionId = (() => {
 
   const selectedPosition = positions.find((p) => p.id === positionId);
 
+  if (!applicationOpen) {
+    return (
+      <section style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <h1 style={{ fontFamily: "var(--font-oswald), sans-serif", fontSize: "22px", fontWeight: 700, color: "#0d6b34", letterSpacing: "0.04em", textTransform: "uppercase", margin: 0 }}>Candidacy applications</h1>
+        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "16px", padding: "28px", maxWidth: "680px", display: "flex", gap: "16px", alignItems: "flex-start" }}>
+          <span style={{ width: 44, height: 44, borderRadius: 12, background: "#fff7ed", color: "#c2410c", display: "grid", placeItems: "center", flexShrink: 0 }}><i className="ti ti-lock" aria-hidden="true" /></span>
+          <div><h2 style={{ margin: "0 0 6px", color: "#1e293b", fontSize: 17 }}>Candidate registration is closed</h2><p style={{ margin: 0, color: "#64748b", fontSize: 14, lineHeight: 1.6 }}>Applications are accepted only during the scheduled candidate registration period. Your existing application remains available in its current status.</p></div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       <h1 style={{
@@ -286,6 +334,13 @@ const defaultPositionId = (() => {
                     {profile.student_id}
                   </div>
                 </div>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div><div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5}}>GRADE AND SECTION</div><div style={{padding:"10px 12px",background:"#f8fafc",borderRadius:8,color:"#1e293b"}}>{profile.section || "Section not listed"}</div></div>
+                <div><div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5}}>STRAND</div><div style={{padding:"10px 12px",background:"#f8fafc",borderRadius:8,color:"#1e293b"}}>{profile.strand || "—"}</div></div>
+                <ApplicationField label="School Year" name="school_year" value={application.school_year} onChange={updateApplication} placeholder="e.g. 2026–2027" maxLength={40}/>
+                <ApplicationField label="Contact Number" name="contact_number" value={application.contact_number} onChange={updateApplication} placeholder="09XX XXX XXXX" maxLength={40}/>
               </div>
 
               {/* Position */}
@@ -355,13 +410,10 @@ const defaultPositionId = (() => {
         }}>
           Strand Representative
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "8px" }}>
           {positions
-            .filter((p) => p.name.toLowerCase().includes("representative"))
+            .filter((p) => p.name.toLowerCase().includes("representative") && profile.strand && isMatchingStrandPosition(p.name, profile.strand))
             .map((p) => {
-              const isMyStrand =
-                profile.strand &&
-                p.name.toLowerCase().includes(profile.strand.toLowerCase());
               const isSelected = positionId === p.id;
               return (
                 <button
@@ -372,35 +424,24 @@ const defaultPositionId = (() => {
                     padding: "10px 14px", borderRadius: "8px", cursor: "pointer",
                     fontSize: "13px", fontWeight: 700, textAlign: "left",
                     transition: "all 0.15s", position: "relative",
-                    border: isSelected
-                      ? "2px solid #0d6b34"
-                      : isMyStrand
-                      ? "2px solid #86efac"
-                      : "1.5px solid #e2e8f0",
-                    background: isSelected
-                      ? "#f0fdf4"
-                      : isMyStrand
-                      ? "#f0fdf4"
-                      : "#fff",
-                    color: isSelected ? "#0d6b34" : isMyStrand ? "#15803d" : "#1e293b",
-                    opacity: isMyStrand || isSelected ? 1 : 0.5,
+                    border: isSelected ? "2px solid #0d6b34" : "1.5px solid #e2e8f0",
+                    background: isSelected ? "#f0fdf4" : "#fff",
+                    color: isSelected ? "#0d6b34" : "#1e293b", opacity: 1,
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <i className="ti ti-users" aria-hidden="true" style={{ fontSize: "16px" }} />
                     {p.name}
                   </div>
-                  {isMyStrand && !isSelected && (
-                    <span style={{
+                  <span style={{
                       position: "absolute", top: "-8px", right: "8px",
-                      background: "#0d6b34", color: "#fff",
+                      background: "#e8f5ed", color: "#0d6b34",
                       fontSize: "9px", fontWeight: 700,
                       borderRadius: "4px", padding: "2px 6px",
                       letterSpacing: "0.04em",
                     }}>
                       YOUR STRAND
-                    </span>
-                  )}
+                  </span>
                   {isSelected && (
                     <i className="ti ti-check" aria-hidden="true" style={{
                       float: "right", fontSize: "14px", color: "#0d6b34",
@@ -409,14 +450,15 @@ const defaultPositionId = (() => {
                 </button>
               );
             })}
+          {profile.strand && !positions.some((p) => p.name.toLowerCase().includes("representative") && isMatchingStrandPosition(p.name, profile.strand!)) && <p style={{ color: "#64748b", fontSize: 13 }}>No representative position is configured for your saved strand ({profile.strand}). Contact an administrator.</p>}
+          {!profile.strand && <p style={{ color: "#be123c", fontSize: 13 }}>Your strand is missing from your profile. Contact an administrator to update it before applying for a strand representative position.</p>}
         </div>
       </>
     )}
   </div>
 {/* Hint for auto-selected representative */}
   {profile.strand &&
-    positions.find((p) => p.id === positionId)
-      ?.name.toLowerCase().includes(profile.strand.toLowerCase()) &&
+    isMatchingStrandPosition(positions.find((p) => p.id === positionId)?.name ?? "", profile.strand) &&
     positions.find((p) => p.id === positionId)
       ?.name.toLowerCase().includes("representative") && (
     <div style={{
@@ -429,6 +471,42 @@ const defaultPositionId = (() => {
     </div>
   )}
               </div>
+            </div>
+          </div>
+
+          {/* Academic qualifications */}
+          <div style={{background:"#fff",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden"}}>
+            <div style={{background:"#0d6b34",padding:"14px 20px",color:"#fff",fontSize:13,fontWeight:800,letterSpacing:".05em"}}>ACADEMIC INFORMATION</div>
+            <div style={{padding:20,display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+              <ApplicationField label="Current Academic Standing / GPA" name="academic_standing" value={application.academic_standing} onChange={updateApplication} placeholder="e.g. GPA or current average"/>
+              <ApplicationField label="Previous School Year Average" name="previous_average" value={application.previous_average} onChange={updateApplication} placeholder="e.g. 91.5"/>
+              <div style={{gridColumn:"1 / -1"}}><ApplicationField label="Academic Awards or Achievements" name="academic_awards" value={application.academic_awards} onChange={updateApplication} placeholder="List awards, or leave blank if none" multiline required={false} maxLength={1000}/></div>
+              <p style={{gridColumn:"1 / -1",margin:0,fontSize:12,color:"#64748b"}}>The uploaded registration form or official grade report is the evidence administrators will use to verify these self-reported details.</p>
+            </div>
+          </div>
+
+          {/* Leadership experience */}
+          <div style={{background:"#fff",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden"}}>
+            <div style={{background:"#1a2e1f",padding:"14px 20px",color:"#fff",fontSize:13,fontWeight:800,letterSpacing:".05em"}}>LEADERSHIP AND EXPERIENCE</div>
+            <div style={{padding:20,display:"flex",flexDirection:"column",gap:14}}>
+              <label style={{display:"flex",flexDirection:"column",gap:6,fontSize:12,fontWeight:700,color:"#475569"}}>Have you held a leadership position before? *<select value={application.leadership_held} onChange={e=>updateApplication("leadership_held",e.target.value)} required style={{padding:10,border:"1px solid #cbd5e1",borderRadius:8,background:"white"}}><option value="">Select an answer</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+              {application.leadership_held === "yes" && <ApplicationField label="Leadership position(s) held" name="leadership_details" value={application.leadership_details} onChange={updateApplication} placeholder="Role, organization, and year" multiline maxLength={1000}/>}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                <ApplicationField label="Organizations or Clubs" name="organizations" value={application.organizations} onChange={updateApplication} placeholder="List memberships, or write None" multiline maxLength={1000}/>
+                <ApplicationField label="Volunteer or School Activity Experience" name="volunteer_experience" value={application.volunteer_experience} onChange={updateApplication} placeholder="Describe relevant activities, or write None" multiline maxLength={1000}/>
+              </div>
+            </div>
+          </div>
+
+          {/* Candidate essay questions */}
+          <div style={{background:"#fff",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden"}}>
+            <div style={{background:"#1a2e1f",padding:"14px 20px",color:"#fff",fontSize:13,fontWeight:800,letterSpacing:".05em"}}>QUALIFICATIONS AND COMMITMENT</div>
+            <div style={{padding:20,display:"flex",flexDirection:"column",gap:14}}>
+              <ApplicationField label="Why do you want to become a School Representative?" name="why_representative" value={application.why_representative} onChange={updateApplication} multiline maxLength={2000}/>
+              <ApplicationField label="What qualities make you a good candidate?" name="candidate_qualities" value={application.candidate_qualities} onChange={updateApplication} multiline maxLength={2000}/>
+              <ApplicationField label="What plans or projects do you have for students?" name="student_plans" value={application.student_plans} onChange={updateApplication} multiline maxLength={2000}/>
+              <ApplicationField label="How will you represent students’ concerns and interests?" name="represent_student_concerns" value={application.represent_student_concerns} onChange={updateApplication} multiline maxLength={2000}/>
+              <ApplicationField label="How will you balance academics and leadership duties?" name="balance_responsibilities" value={application.balance_responsibilities} onChange={updateApplication} multiline maxLength={2000}/>
             </div>
           </div>
 
@@ -464,7 +542,6 @@ const defaultPositionId = (() => {
                   {tagline.length}/120
                 </div>
               </div>
-
               {/* Bio */}
               <div>
                 <label style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
@@ -492,6 +569,16 @@ const defaultPositionId = (() => {
 
         {/* ── Right — photo + summary + submit ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+
+          {/* Official grade evidence */}
+          <div style={{background:"#fff",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden"}}>
+            <div style={{background:"#0d6b34",padding:"15px 18px",color:"#fff",fontSize:13,fontWeight:800}}>REGISTRATION FORM / OFFICIAL GRADE REPORT *</div>
+            <div style={{padding:18}}>
+              <p style={{margin:"0 0 12px",fontSize:12,color:"#64748b",lineHeight:1.55}}>Upload the school registration form or official grade report that shows your grades. Only administrators can open this private document. PDF, JPG, or PNG; maximum 10 MB.</p>
+              <input type="file" accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" required onChange={e=>{const f=e.target.files?.[0]??null;if(f&&f.size>10*1024*1024){setRegistrationFile(null);setError("The supporting document must be 10 MB or smaller.");e.currentTarget.value="";return;}if(f&&!(["application/pdf","image/jpeg","image/png"].includes(f.type))){setRegistrationFile(null);setError("Upload a PDF, JPG, or PNG document.");e.currentTarget.value="";return;}setError("");setRegistrationFile(f);}} style={{width:"100%",fontSize:12,color:"#334155"}} />
+              {registrationFile&&<div style={{marginTop:8,fontSize:12,fontWeight:700,color:"#0d6b34"}}><i className="ti ti-file-check"/> {registrationFile.name}</div>}
+            </div>
+          </div>
 
           {/* Photo upload */}
           <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
@@ -565,6 +652,9 @@ const defaultPositionId = (() => {
 
           {/* Agreement + Submit */}
           <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "18px", display: "flex", flexDirection: "column", gap: "14px" }}>
+            <p style={{margin:"0 0 10px",fontSize:12,color:"#475569",lineHeight:1.55}}>I certify that my answers and uploaded document are true and correct. If selected, I will follow school policies and serve students honestly and fairly.</p>
+            <ApplicationField label="Type your registered full name as your signature" name="declaration_signature" value={application.declaration_signature} onChange={updateApplication} placeholder={profile.full_name}/>
+            <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>Declaration date: {new Date().toLocaleDateString("en-PH",{year:"numeric",month:"long",day:"numeric"})}</div>
             <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", cursor: "pointer" }}>
               <div
                 onClick={() => setAgreed(!agreed)}
@@ -579,7 +669,7 @@ const defaultPositionId = (() => {
                 {agreed && <i className="ti ti-check" style={{ fontSize: "11px", color: "#fff" }} />}
               </div>
               <span style={{ fontSize: "13px", color: "#475569", lineHeight: 1.5 }}>
-                I hereby confirm that all information provided is <strong>true and correct</strong>, and I understand the responsibilities of running for office.
+                I agree to this declaration and understand the responsibilities of the position.
               </span>
             </label>
 

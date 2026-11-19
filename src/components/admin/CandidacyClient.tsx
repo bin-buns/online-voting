@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { updateCandidateStatus, deleteCandidate } from "../../app/actions/candidate";
+import { updateCandidateStatus, deleteCandidate, getCandidateRegistrationDocumentUrl } from "../../app/actions/candidate";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,6 +15,9 @@ type Candidate = {
   full_name: string;
   student_id: string;
   position: string;
+  section: string; strand: string; tagline: string; bio: string; photo_url: string;
+  application_data: Record<string,string>; registration_form_path: string | null;
+  review_remarks: string; reviewed_at: string | null; reviewed_by_name: string;
 };
 
 type Stats = {
@@ -30,8 +34,10 @@ type RawCandidate = {
   user_id: string;
   status: "pending" | "approved" | "rejected";
   created_at: string;
-  profiles: { full_name: string; student_id: string } | null;
+  profiles: { full_name: string; student_id: string; section?: string | null; strand?: string | null } | null;
   positions: { name: string } | null;
+  tagline?: string | null; bio?: string | null; photo_url?: string | null;
+  candidate_applications?: { application_data: Record<string,string> | null; registration_form_path: string | null; review_remarks: string | null; reviewed_at: string | null; reviewed_by_name: string | null } | null;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -46,11 +52,13 @@ const STATUS_COLOR: Record<string, { color: string; bg: string; label: string }>
 
 function ReviewModal({
   candidate,
+  locked,
   onClose,
   onUpdate,
   onDelete,
 }: {
   candidate: Candidate;
+  locked: boolean;
   onClose: () => void;
   onUpdate: (id: string, status: "approved" | "rejected") => void;
   onDelete: (id: string) => void;
@@ -58,6 +66,9 @@ function ReviewModal({
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [documentUrl, setDocumentUrl] = useState("");
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const [reviewRemarks, setReviewRemarks] = useState("");
 
   async function handleDelete() {
   setLoading(true);
@@ -71,11 +82,18 @@ function ReviewModal({
   onClose();
 }
 
+  async function handleOpenRegistrationForm() {
+    setDocumentLoading(true); setError("");
+    try { const result = await getCandidateRegistrationDocumentUrl(candidate.id); if (result.error || !result.url) setError(result.error ?? "Could not open the document."); else setDocumentUrl(result.url); }
+    catch { setError("Could not create a secure link to the registration form."); }
+    setDocumentLoading(false);
+  }
+
   async function handleAction(newStatus: "approved" | "rejected") {
   setLoading(true);
   setError("");
 
-  const result = await updateCandidateStatus(candidate.id, candidate.user_id, newStatus);
+  const result = await updateCandidateStatus(candidate.id, candidate.user_id, newStatus, reviewRemarks);
   if (result.error) { setError(result.error); setLoading(false); return; }
 
   onUpdate(candidate.id, newStatus);
@@ -95,146 +113,83 @@ function ReviewModal({
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{
-        background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "440px",
+      <div role="dialog" aria-modal="true" aria-label={`${candidate.full_name} candidacy review`} style={{
+        background: "#fff", borderRadius: "20px", width: "min(960px, 96vw)", maxWidth: "960px",
+        maxHeight: "calc(100vh - 32px)",
         boxShadow: "0 24px 64px rgba(0,0,0,0.18)", overflow: "hidden",
         animation: "modalIn 0.18s ease",
       }}>
-        {/* Header */}
-        <div style={{ background: "#0d6b34", padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{
-              width: "42px", height: "42px", borderRadius: "50%",
-              background: "rgba(255,255,255,0.18)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "16px", fontWeight: 700, color: "#fff",
-            }}>
-              {initials}
-            </div>
-            <div>
-              <div style={{ fontSize: "16px", fontWeight: 700, color: "#fff" }}>{candidate.full_name}</div>
-              <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.75)" }}>Candidacy Review</div>
-            </div>
-          </div>
-          <button onClick={onClose} style={{
-            background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px",
-            width: "32px", height: "32px", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#fff", fontSize: "18px", lineHeight: 1,
-          }}>×</button>
+        <div className="candidate-review-topbar">
+          <div><h2>Candidate Review</h2><p>Review the student profile and candidacy application</p></div>
+          <button onClick={onClose} aria-label="Close candidate review" className="candidate-review-close">×</button>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: "24px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "20px" }}>
-            {([
-              { label: "Position",   value: candidate.position   },
-              { label: "Student ID", value: candidate.student_id },
-              { label: "Applied", value: new Date(candidate.created_at).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }) },
-              { label: "Status", value: (
-                <span style={{ color: st.color, background: st.bg, borderRadius: "6px", padding: "2px 10px", fontSize: "12px", fontWeight: 700 }}>
-                  {st.label}
-                </span>
-              )},
-            ] as { label: string; value: React.ReactNode }[]).map(({ label, value }) => (
-              <div key={label} style={{ background: "#f8fafc", borderRadius: "10px", padding: "12px 14px" }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>{label}</div>
-                <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>{value}</div>
-              </div>
-            ))}
-          </div>
+        <div className="candidate-review-columns">
+          <section className="candidate-review-column candidate-review-profile">
+            <h3>Candidate Profile</h3>
+            {candidate.photo_url ? <Image src={candidate.photo_url} alt={candidate.full_name + " candidate portrait"} width={120} height={120} unoptimized className="candidate-review-avatar" /> : <div className="candidate-review-avatar candidate-review-initials">{initials}</div>}
+            <h4>{candidate.full_name}</h4>
+            <p className="candidate-review-position">{candidate.position}</p>
+            <span className="candidate-review-status" style={{ color: st.color, background: st.bg }}>{st.label}</span>
+            <div className="candidate-review-profile-note">Use the information in the next panels to review this application.</div>
+          </section>
 
-          {error && (
-            <div style={{ background: "#ffe4e6", color: "#be123c", borderRadius: "8px", padding: "10px 14px", fontSize: "13px", marginBottom: "16px" }}>
-              {error}
+          <section className="candidate-review-column">
+            <h3>Student Information</h3>
+            <div className="candidate-review-fields">
+              {[
+                ["Student ID", candidate.student_id],
+                ["Section", candidate.section || "—"],
+                ["Strand", candidate.strand || "—"],
+                ["Applied", new Date(candidate.created_at).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })],
+              ].map(([label, value]) => <div className="candidate-review-field" key={label}><strong>{label}</strong><span>{value}</span></div>)}
             </div>
-          )}
+            <div className="candidate-review-info-card"><strong>School Year</strong><p>{candidate.application_data.school_year || "Not provided"}</p></div>
+            <div className="candidate-review-info-card"><strong>Contact Number</strong><p>{candidate.application_data.contact_number || "Not provided"}</p></div>
+            <div className="candidate-review-info-card"><strong>Academic Standing / GPA</strong><p>{candidate.application_data.academic_standing || "Not provided"}</p></div>
+            <div className="candidate-review-info-card"><strong>Previous School Year Average</strong><p>{candidate.application_data.previous_average || "Not provided"}</p></div>
+            <div className="candidate-review-info-card"><strong>Academic Awards</strong><p>{candidate.application_data.academic_awards || "None listed"}</p></div>
+            <div className="candidate-review-info-card"><strong>School Evaluation</strong><p>{candidate.reviewed_by_name ? `Reviewed by ${candidate.reviewed_by_name}${candidate.reviewed_at ? ` · ${new Date(candidate.reviewed_at).toLocaleDateString("en-PH")}` : ""}` : "Awaiting administrator review"}</p>{candidate.review_remarks&&<p><b>Remarks:</b> {candidate.review_remarks}</p>}</div>
+            <div className="candidate-review-document"><strong>Registration Form / Grade Evidence</strong>
+              {documentUrl ? <a href={documentUrl} target="_blank" rel="noreferrer">Open uploaded document</a> : <button type="button" onClick={handleOpenRegistrationForm} disabled={documentLoading || !candidate.registration_form_path}>{documentLoading ? "Preparing secure link…" : candidate.registration_form_path ? "View private document" : "No document uploaded"}</button>}
+              <small>Private link expires after five minutes.</small>
+            </div>
+          </section>
 
-          {/* Confirm delete state */}
-          {confirmDelete ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              <div style={{ background: "#fff5f5", border: "1px solid #fecdd3", borderRadius: "10px", padding: "12px 14px", fontSize: "13px", color: "#be123c", fontWeight: 600 }}>
-                <i className="ti ti-alert-triangle" style={{ marginRight: "6px" }} />
-                This will permanently delete the application and allow the student to reapply. Are you sure?
-              </div>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={loading}
-                  style={{ flex: 1, padding: "11px", borderRadius: "10px", border: "1.5px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: "14px", cursor: "pointer" }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={loading}
-                  style={{ flex: 1, padding: "11px", borderRadius: "10px", border: "none", background: "#be123c", color: "#fff", fontWeight: 700, fontSize: "14px", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1 }}
-                >
-                  <i className="ti ti-trash" style={{ marginRight: "6px" }} />
-                  {loading ? "Deleting…" : "Yes, Delete"}
-                </button>
-              </div>
+          <section className="candidate-review-column">
+            <h3>Campaign Information</h3>
+            <div className="candidate-review-info-card">
+              <strong>Campaign slogan</strong>
+              <p title={candidate.tagline || "Not provided"}>{candidate.tagline || "Not provided"}</p>
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              <div style={{ display: "flex", gap: "10px" }}>
-                {candidate.status !== "rejected" && (
-                  <button
-                    disabled={loading}
-                    onClick={() => handleAction("rejected")}
-                    style={{
-                      flex: 1, padding: "11px", borderRadius: "10px", border: "2px solid #fecdd3",
-                      background: "#fff", color: "#be123c", fontWeight: 700, fontSize: "14px",
-                      cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1, transition: "all 0.15s",
-                    }}
-                    onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "#ffe4e6"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
-                  >
-                    <i className="ti ti-x" style={{ marginRight: "6px" }} />
-                    {candidate.status === "approved" ? "Revoke" : "Reject"}
-                  </button>
-                )}
-                {candidate.status !== "approved" && (
-                  <button
-                    disabled={loading}
-                    onClick={() => handleAction("approved")}
-                    style={{
-                      flex: 1, padding: "11px", borderRadius: "10px", border: "none",
-                      background: "#0d6b34", color: "#fff", fontWeight: 700, fontSize: "14px",
-                      cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1, transition: "all 0.15s",
-                    }}
-                    onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "#0a5229"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "#0d6b34"; }}
-                  >
-                    <i className="ti ti-check" style={{ marginRight: "6px" }} />
-                    {loading ? "Saving…" : candidate.status === "rejected" ? "Approve Instead" : "Approve"}
-                  </button>
-                )}
-              </div>
-
-              {/* Delete button */}
-              <button
-                onClick={() => setConfirmDelete(true)}
-                disabled={loading}
-                style={{
-                  width: "100%", padding: "10px", borderRadius: "10px",
-                  border: "2px dashed #fecdd3", background: "#fff5f5",
-                  color: "#be123c", fontWeight: 700, fontSize: "13px",
-                  cursor: "pointer", display: "flex", alignItems: "center",
-                  justifyContent: "center", gap: "6px", transition: "all 0.15s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "#ffe4e6"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "#fff5f5"; }}
-              >
-                <i className="ti ti-trash" aria-hidden="true" />
-                Delete Application
-                <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 400 }}>
-                  
-                </span>
-              </button>
+            <div className="candidate-review-info-card candidate-review-bio-card">
+              <strong>Candidate bio / credentials</strong>
+              <p title={candidate.bio || "Not provided"}>{candidate.bio || "Not provided"}</p>
             </div>
-          )}
+            <div className="candidate-review-info-card"><strong>Previous leadership</strong><p>{candidate.application_data.leadership_held === "yes" ? candidate.application_data.leadership_details || "Details not provided" : candidate.application_data.leadership_held === "no" ? "No previous position" : "Not provided"}</p></div>
+            <div className="candidate-review-info-card"><strong>Organizations and clubs</strong><p>{candidate.application_data.organizations || "Not provided"}</p></div>
+            <div className="candidate-review-info-card"><strong>Volunteer / school activities</strong><p>{candidate.application_data.volunteer_experience || "Not provided"}</p></div>
+            <details className="candidate-review-answers"><summary>View candidate responses</summary><div>{[["Why this student wants to represent",candidate.application_data.why_representative],["Candidate qualities",candidate.application_data.candidate_qualities],["Plans or projects",candidate.application_data.student_plans],["How they will represent student concerns",candidate.application_data.represent_student_concerns],["Balancing academics and leadership",candidate.application_data.balance_responsibilities]].map(([label,value])=><section key={label}><strong>{label}</strong><p>{value || "Not provided"}</p></section>)}</div></details>          </section>
         </div>
+
+        {error && <div className="candidate-review-error" role="alert">{error}</div>}
+
+        {locked ? (
+          <div className="candidate-review-footer"><p style={{ marginRight: "auto", color: "#9a3412", fontSize: 13, fontWeight: 700 }}>Review actions are locked because voting has started.</p></div>
+        ) : confirmDelete ? (
+          <div className="candidate-review-footer candidate-review-delete-confirm">
+            <p><i className="ti ti-alert-triangle" aria-hidden="true" /> This permanently deletes the application and allows the student to reapply. Continue?</p>
+            <button onClick={() => setConfirmDelete(false)} disabled={loading} className="candidate-review-secondary-button">Cancel</button>
+            <button onClick={handleDelete} disabled={loading} className="candidate-review-delete-button">{loading ? "Deleting…" : "Yes, Delete Application"}</button>
+          </div>
+        ) : (
+          <div className="candidate-review-footer">
+            <label className="candidate-review-remarks">Administrator remarks (optional)<textarea value={reviewRemarks} onChange={e=>setReviewRemarks(e.target.value)} maxLength={1000} placeholder="Add review notes or a reason for disapproval" /></label>
+            {candidate.status !== "rejected" && <button disabled={loading} onClick={() => handleAction("rejected")} className="candidate-review-secondary-button">{candidate.status === "approved" ? "Revoke Approval" : "Reject Candidate"}</button>}
+            {candidate.status !== "approved" && <button disabled={loading} onClick={() => handleAction("approved")} className="candidate-review-approve-button">{loading ? "Saving…" : candidate.status === "rejected" ? "Approve Candidate" : "Approve Candidate"}</button>}
+            <button onClick={() => setConfirmDelete(true)} disabled={loading} className="candidate-review-delete-link"><i className="ti ti-trash" aria-hidden="true" /> Delete Application</button>
+          </div>
+        )}
       </div>
       <style>{`
         @keyframes modalIn {
@@ -251,15 +206,25 @@ function ReviewModal({
 export default function CandidacyClient({
   initialCandidates,
   stats: initialStats,
+  votingStartsAt,
 }: {
   initialCandidates: Candidate[];
   stats: Stats;
+  votingStartsAt: string | null;
 }) {
   const [candidates, setCandidates] = useState<Candidate[]>(initialCandidates);
   const [stats, setStats]           = useState<Stats>(initialStats);
   const [filter, setFilter]         = useState<Filter>("all");
   const [search, setSearch]         = useState("");
   const [selected, setSelected]     = useState<Candidate | null>(null);
+  const [electionStarted, setElectionStarted] = useState(false);
+
+  useEffect(() => {
+    const update = () => setElectionStarted(Boolean(votingStartsAt && Date.now() >= new Date(votingStartsAt).getTime()));
+    update();
+    const timer = setInterval(update, 15_000);
+    return () => clearInterval(timer);
+  }, [votingStartsAt]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -278,7 +243,7 @@ export default function CandidacyClient({
         supabase.from("candidates").select("*", { count: "exact", head: true }).eq("status", "rejected"),
         supabase
           .from("candidates")
-          .select(`id, user_id, status, created_at, profiles ( full_name, student_id ), positions ( name )`)
+          .select(`id, user_id, status, created_at, tagline, bio, photo_url, candidate_applications(application_data,registration_form_path,review_remarks,reviewed_at,reviewed_by_name), profiles ( full_name, student_id, section, strand ), positions ( name )`)
           .order("created_at", { ascending: false }),
       ]);
 
@@ -290,6 +255,10 @@ export default function CandidacyClient({
         full_name:  c.profiles?.full_name  ?? "Unknown",
         student_id: c.profiles?.student_id ?? "—",
         position:   c.positions?.name      ?? "—",
+        section: c.profiles?.section ?? "—", strand: c.profiles?.strand ?? "—",
+        tagline: c.tagline ?? "", bio: c.bio ?? "", photo_url: c.photo_url ?? "",
+        application_data: c.candidate_applications?.application_data ?? {}, registration_form_path: c.candidate_applications?.registration_form_path ?? null,
+        review_remarks: c.candidate_applications?.review_remarks ?? "", reviewed_at: c.candidate_applications?.reviewed_at ?? null, reviewed_by_name: c.candidate_applications?.reviewed_by_name ?? "",
       })));
 
       setStats({ total: total ?? 0, pending: pending ?? 0, approved: approved ?? 0, rejected: rejected ?? 0 });
@@ -542,7 +511,7 @@ export default function CandidacyClient({
                           onMouseEnter={(e) => { e.currentTarget.style.background = "#f0fdf4"; e.currentTarget.style.borderColor = "#0d6b34"; }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.borderColor = "#e2e8f0"; }}
                         >
-                          <i className="ti ti-eye" /> Review
+                          <i className="ti ti-eye" /> {electionStarted ? "View" : "Review"}
                         </button>
                       </td>
                     </tr>
@@ -563,6 +532,7 @@ export default function CandidacyClient({
       {selected && (
         <ReviewModal
           candidate={selected}
+          locked={electionStarted}
           onClose={() => setSelected(null)}
           onUpdate={handleUpdate}
           onDelete={handleDelete}

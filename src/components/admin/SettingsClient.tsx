@@ -6,6 +6,8 @@ import ElectionTab     from "@/components/admin/settings/ElectionTab";
 import SystemTab       from "@/components/admin/settings/SystemTab";
 import AuditTab        from "@/components/admin/settings/AuditTab";
 import ScheduleTab from "@/components/admin/settings/ScheduleTab";
+import ArchiveTab from "@/components/admin/settings/ArchiveTab";
+import NotificationsTab from "@/components/admin/settings/NotificationsTab";
 
 type Student = {
   id: string;
@@ -14,6 +16,7 @@ type Student = {
   section: string | null;
   strand: string | null;
   role: string;
+  is_active: boolean;
 };
 
 type AuditLog = {
@@ -25,13 +28,15 @@ type AuditLog = {
   category: string;
 };
 
-type Tab = "accounts" | "accessibility" | "schedule" | "election" | "system" | "audit";
+type Tab = "accounts" | "accessibility" | "schedule" | "election" | "archive" | "notifications" | "system" | "audit";
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "accounts",      label: "Accounts",      icon: "ti-users"       },
-  { key: "accessibility", label: "Accessibility",  icon: "ti-accessible"  },
-  { key: "schedule",      label: "Schedule",       icon: "ti-calendar"    }, // ← new
+  { key: "accessibility", label: "Display",        icon: "ti-adjustments" },
+  { key: "schedule",      label: "Schedule",       icon: "ti-calendar"    },
   { key: "election",      label: "Election",       icon: "ti-settings-2"  },
+  { key: "archive",       label: "Archive",        icon: "ti-history"     },
+  { key: "notifications", label: "Notifications", icon: "ti-bell" },
   { key: "system",        label: "System",         icon: "ti-adjustments" },
   { key: "audit",         label: "Audit Log",      icon: "ti-file-text"   },
 ];
@@ -76,8 +81,10 @@ export default function SettingsClient({
 
       {/* Tab Content */}
       {activeTab === "accounts"      && <AccountsTab      initialStudents={initialStudents} />}
-      {activeTab === "accessibility" && <AccessibilityTab />}
+      {activeTab === "accessibility" && <AccessibilityTab includeMagnifier />}
       {activeTab === "election"      && <ElectionTab />}
+      {activeTab === "archive" && <ArchiveTab />}
+      {activeTab === "notifications" && <NotificationsTab />}
       {activeTab === "system"        && <SystemTab />}
       {activeTab === "audit"         && <AuditTab         initialLogs={initialAuditLogs} />}
       {activeTab === "schedule" && <ScheduleTab />}

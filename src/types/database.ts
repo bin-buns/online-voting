@@ -8,14 +8,25 @@ export type Profile = {
   created_at: string;
   strand: string | null;
   section: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
+  suffix?: string | null;
+  is_active?: boolean;
+  is_temporary_password?: boolean;
+  first_login_at?: string | null;
+  password_change_deadline?: string | null;
 };
 
 export type ElectionSettings = {
   id: number;
   title: string;
+  candidate_registration_starts_at: string;
+  candidate_registration_ends_at: string;
   voting_starts_at: string;
   voting_ends_at: string;
   results_visible_at: string;
+  archive_at: string;
   is_active: boolean;
   updated_at: string;
 };
@@ -66,8 +77,9 @@ export function getElectionPhase(settings: ElectionSettings): ElectionPhase {
   const results = new Date(settings.results_visible_at).getTime();
 
   if (now >= results) return "results";
-  if (now > end) return "closed";
-  if (now >= start && now <= end) return "voting";
+  if (!settings.is_active) return "closed";
+  if (now >= end) return "closed";
+  if (now >= start && now < end) return "voting";
   return "upcoming";
 }
 

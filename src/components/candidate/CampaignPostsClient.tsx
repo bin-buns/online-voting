@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import Image from "next/image";
 import {
   createCampaignPost,
@@ -270,9 +270,13 @@ function DeleteModal({
 export default function CampaignPostsClient({
   initialPosts,
   approvedId,
+  campaignOpen,
+  votingStartsAt,
 }: {
   initialPosts: Post[];
   approvedId: string | null;
+  campaignOpen: boolean;
+  votingStartsAt: string | null;
 }) {
   const [posts, setPosts]           = useState<Post[]>(initialPosts);
   const [editPost, setEditPost]     = useState<Post | null>(null);
@@ -280,12 +284,21 @@ export default function CampaignPostsClient({
   const [isPending, startTransition] = useTransition();
   const [error, setError]           = useState("");
   const [preview, setPreview]       = useState<string | null>(null);
+  const [imageName, setImageName]   = useState("");
+  const [canCampaign, setCanCampaign] = useState(campaignOpen);
+
+  useEffect(() => {
+    const update = () => setCanCampaign(Boolean(votingStartsAt && Date.now() < new Date(votingStartsAt).getTime()));
+    update();
+    const timer = setInterval(update, 15_000);
+    return () => clearInterval(timer);
+  }, [votingStartsAt]);
   const imageRef                    = useRef<HTMLInputElement>(null);
   const formRef                     = useRef<HTMLFormElement>(null);
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) setPreview(URL.createObjectURL(file));
+    if (file) { setPreview(URL.createObjectURL(file)); setImageName(file.name); }
   }
 
   function handleCreate(e: React.FormEvent<HTMLFormElement>) {
@@ -297,6 +310,7 @@ export default function CampaignPostsClient({
         await createCampaignPost(fd);
         form.reset();
         setPreview(null);
+        setImageName("");
         setError("");
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Something went wrong";
@@ -325,19 +339,21 @@ export default function CampaignPostsClient({
           textTransform: "uppercase", margin: "0 0 4px",
         }}>My Campaign Posters</h1>
         <p style={{ margin: 0, fontSize: "13.5px", color: "#64748b" }}>
-          Create and manage your campaign posters — voters will see them on the dashboard.
+          Share a clear, polished message with students. Your approved campaign posters appear on the voter dashboard.
         </p>
       </div>
 
       <div style={{ display: "grid", gap: "24px", gridTemplateColumns: "1fr 1fr" }}>
 
         {/* ── Create Form ── */}
-        <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
-          <div style={{ background: "#0d6b34", padding: "16px 20px" }}>
-            <h2 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#fff" }}>New Poster</h2>
+        <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 8px 24px rgba(15, 23, 42, .05)" }}>
+          <div style={{ background: "linear-gradient(120deg, #0d6b34, #14532d)", padding: "18px 20px" }}>
+            <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", gap: 9 }}><i className="ti ti-speakerphone" aria-hidden="true" /> New Campaign Poster</h2>
           </div>
           <div style={{ padding: "20px" }}>
-            {!approvedId ? (
+            {!canCampaign ? (
+              <div style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412", borderRadius: 12, padding: 16, fontSize: 13, lineHeight: 1.55 }}><strong>Campaign posting is closed.</strong><br />Posting and editing are locked after voting starts. Your existing posters remain visible to students.</div>
+            ) : !approvedId ? (
               <p style={{ fontSize: "14px", color: "#64748b", margin: 0 }}>
                 You need an approved candidacy before creating posters.
               </p>
@@ -380,23 +396,17 @@ export default function CampaignPostsClient({
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Image <span style={{ fontWeight: 400, color: "#9ca3af", textTransform: "none" }}>(optional)</span>
+                  <label htmlFor="campaign-image" style={{ fontSize: "12px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Poster Image <span style={{ fontWeight: 400, color: "#9ca3af", textTransform: "none" }}>(optional)</span>
                   </label>
-                  <input
-                    ref={imageRef}
-                    name="image"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={handleImageChange}
-                    style={{ fontSize: "13px" }}
-                  />
+                  <input ref={imageRef} id="campaign-image" name="image" type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImageChange} style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }} />
+                  <label htmlFor="campaign-image" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#f8fafc", border: "1.5px dashed #94a3b8", borderRadius: 10, color: "#334155", cursor: "pointer", fontSize: 13, fontWeight: 700 }}><i className="ti ti-photo-up" aria-hidden="true" style={{ color: "#0d6b34", fontSize: 20 }} />{imageName || "Choose a poster image"}<span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11, fontWeight: 600 }}>JPG, PNG, WebP</span></label>
                   {preview && (
                     <div style={{ position: "relative", width: "100%", height: "160px", borderRadius: "10px", overflow: "hidden", marginTop: "6px" }}>
                       <Image src={preview} alt="Preview" fill style={{ objectFit: "cover" }} />
-                      <button
+                  <button
                         type="button"
-                        onClick={() => { setPreview(null); if (imageRef.current) imageRef.current.value = ""; }}
+                    onClick={() => { setPreview(null); setImageName(""); if (imageRef.current) imageRef.current.value = ""; }}
                         style={{
                           position: "absolute", top: "8px", right: "8px",
                           background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "6px",
@@ -469,7 +479,7 @@ export default function CampaignPostsClient({
 
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <span style={{ fontSize: "11px", color: "#94a3b8" }}>{timeAgo(post.created_at)}</span>
-                      <div style={{ display: "flex", gap: "8px" }}>
+              {canCampaign && <div style={{ display: "flex", gap: "8px" }}>
                         <button
                           onClick={() => setEditPost(post)}
                           style={{
@@ -494,7 +504,7 @@ export default function CampaignPostsClient({
                         >
                           🗑 Delete
                         </button>
-                      </div>
+              </div>}
                     </div>
                   </div>
                 </div>

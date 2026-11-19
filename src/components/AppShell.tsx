@@ -15,13 +15,15 @@ const navByRole: Record<Profile["role"], { href: string; label: string }[]> = {
     { href: "/candidates", label: "Candidates" },
     { href: "/vote", label: "Vote" },
     { href: "/results", label: "Results" },
+    { href: "/dashboard/settings", label: "Settings" },
   ],
   candidate: [
     { href: "/dashboard", label: "Home" },
     { href: "/candidate/profile", label: "My candidacy" },
-    { href: "/candidate/campaign", label: "My Posters" },
+    { href: "/candidate/campaign", label: "Campaign Posts" },
     { href: "/candidates", label: "All candidates" },
     { href: "/results", label: "Results" },
+    { href: "/dashboard/settings", label: "Settings" },
   ],
 };
 
@@ -64,6 +66,11 @@ export function AppShell({
           ))}
         </nav>
       </header>
+      {profile.is_temporary_password && profile.password_change_deadline && (
+        <div className="mx-auto mt-4 max-w-6xl rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Your temporary password must be changed by {new Date(profile.password_change_deadline).toLocaleDateString("en-PH", { dateStyle: "long" })}. If it is not changed by then, your account will be deactivated. <Link className="font-bold underline" href="/dashboard/settings">Change it now</Link>.
+        </div>
+      )}
       <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
     </div>
   );

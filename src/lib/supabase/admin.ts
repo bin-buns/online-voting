@@ -1,3 +1,4 @@
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 /** Server-only client for admin lookups (e.g. Student ID → email). */

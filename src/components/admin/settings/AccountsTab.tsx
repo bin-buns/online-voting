@@ -1,6 +1,5 @@
 "use client";
 import { useState, useRef } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 type Student = {
   id: string;
@@ -9,9 +8,10 @@ type Student = {
   section: string | null;
   strand: string | null;
   role: string;
+  is_active?: boolean;
 };
 
-const STRANDS = ["ICT", "STEM", "ABM", "HUMSS", "GAS", "TVL"];
+const STRANDS = ["ICT", "STEM", "ABM", "HUMSS"];
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -72,39 +72,27 @@ function ResetPasswordModal({
 }: {
   student: Student;
   onClose: () => void;
-  onSuccess: (name: string) => void;
+  onSuccess: (name: string, emailSent: boolean, emailError?: string) => void;
 }) {
-  const [newPassword, setNewPassword]     = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading]             = useState(false);
   const [error, setError]                 = useState("");
-  const [showNew, setShowNew]             = useState(false);
-  const [showConfirm, setShowConfirm]     = useState(false);
-
-  const passwordError = newPassword && newPassword.length < 8
-    ? "Password must be at least 8 characters"
-    : undefined;
-  const confirmError = confirmPassword && newPassword !== confirmPassword
-    ? "Passwords do not match"
-    : undefined;
+  const [generatedPassword, setGeneratedPassword] = useState("");
+  const [emailStatus, setEmailStatus] = useState<{ sent: boolean; error?: string } | null>(null);
 
   async function handleReset() {
-    if (!newPassword)                { setError("Please enter a new password."); return; }
-    if (newPassword.length < 8)      { setError("Password must be at least 8 characters."); return; }
-    if (newPassword !== confirmPassword) { setError("Passwords do not match."); return; }
-
     setLoading(true);
     setError("");
     try {
       const res  = await fetch("/api/admin/reset-password", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ student_id: student.id, new_password: newPassword }),
+        body:    JSON.stringify({ student_id: student.id }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to reset password");
-      onSuccess(student.full_name);
-      onClose();
+      setGeneratedPassword(json.temporary_password);
+      setEmailStatus({ sent: json.email_sent, error: json.email_error });
+      onSuccess(student.full_name, json.email_sent, json.email_error);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reset password");
     }
@@ -164,70 +152,15 @@ function ResetPasswordModal({
             ))}
           </div>
 
-          {/* New password */}
-          <div>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", marginBottom: "5px" }}>New Password *</div>
-            <div style={{ position: "relative" }}>
-              <input
-                type={showNew ? "text" : "password"}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Min. 8 characters"
-                style={{
-                  width: "100%", borderRadius: "8px", padding: "8px 40px 8px 12px",
-                  fontSize: "13px", fontFamily: "var(--font-open-sans), sans-serif",
-                  color: "#1a2e1f", outline: "none", background: "#f8fafc",
-                  border: `1px solid ${passwordError ? "#be123c" : "#e2e8f0"}`,
-                  boxSizing: "border-box",
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowNew((p) => !p)}
-                style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: "16px" }}
-              >
-                <i className={`ti ${showNew ? "ti-eye-off" : "ti-eye"}`} aria-hidden="true" />
-              </button>
+          {generatedPassword ? (
+            <div style={{ background: "#f0fdf4", border: "1px solid #86efac", color: "#14532d", borderRadius: 9, padding: 12 }}>
+              <strong>Generated temporary password</strong>
+              <p style={{ fontSize: 12 }}>Shown only once. Resetting starts a fresh 15-day period from the student’s next successful login.</p>
+              <p style={{ fontSize: 12, fontWeight: 700, color: emailStatus?.sent ? "#15803d" : "#be123c" }}>{emailStatus?.sent ? "Temporary password emailed to the student." : `Password email failed: ${emailStatus?.error ?? "unknown email error"}. Share the shown password securely.`}</p>
+              <code style={{ userSelect: "all", fontSize: 16 }}>{generatedPassword}</code>
+              <button type="button" onClick={() => { void navigator.clipboard.writeText(generatedPassword); }} style={{ marginLeft: 10, border: 0, borderRadius: 7, padding: "7px 10px", background: "#0d6b34", color: "#fff", cursor: "pointer" }}>Copy</button>
             </div>
-            {passwordError && (
-              <div style={{ fontSize: "11px", color: "#be123c", marginTop: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
-                <i className="ti ti-alert-circle" aria-hidden="true" />{passwordError}
-              </div>
-            )}
-          </div>
-
-          {/* Confirm password */}
-          <div>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", marginBottom: "5px" }}>Confirm Password *</div>
-            <div style={{ position: "relative" }}>
-              <input
-                type={showConfirm ? "text" : "password"}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter new password"
-                style={{
-                  width: "100%", borderRadius: "8px", padding: "8px 40px 8px 12px",
-                  fontSize: "13px", fontFamily: "var(--font-open-sans), sans-serif",
-                  color: "#1a2e1f", outline: "none", background: "#f8fafc",
-                  border: `1px solid ${confirmError ? "#be123c" : "#e2e8f0"}`,
-                  boxSizing: "border-box",
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirm((p) => !p)}
-                style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: "16px" }}
-              >
-                <i className={`ti ${showConfirm ? "ti-eye-off" : "ti-eye"}`} aria-hidden="true" />
-              </button>
-            </div>
-            {confirmError && (
-              <div style={{ fontSize: "11px", color: "#be123c", marginTop: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
-                <i className="ti ti-alert-circle" aria-hidden="true" />{confirmError}
-              </div>
-            )}
-          </div>
-
+          ) : <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>A new secure temporary password will be generated. The student must change it within 15 days of their next successful login.</p>}
           {error && (
             <div style={{ background: "#ffe4e6", color: "#be123c", borderRadius: "8px", padding: "10px 14px", fontSize: "13px" }}>
               {error}
@@ -243,12 +176,12 @@ function ResetPasswordModal({
               Cancel
             </button>
             <button
-              onClick={handleReset}
-              disabled={loading || !!passwordError || !!confirmError}
+              onClick={generatedPassword ? onClose : handleReset}
+              disabled={loading}
               style={{ flex: 1, padding: "11px", borderRadius: "10px", border: "none", background: "#0d6b34", color: "#fff", fontWeight: 700, fontSize: "14px", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1, fontFamily: "var(--font-open-sans), sans-serif" }}
             >
               <i className="ti ti-key" aria-hidden="true" style={{ marginRight: "6px" }} />
-              {loading ? "Resetting…" : "Reset Password"}
+              {generatedPassword ? "Close" : loading ? "Generating…" : "Generate New Password"}
             </button>
           </div>
         </div>
@@ -370,12 +303,10 @@ export default function AccountsTab({
   const [resetTarget, setResetTarget]   = useState<Student | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
 
-  const [form, setForm] = useState({
-    full_name: "", student_id: "", section: "",
-    strand: "ICT", email: "", password: "",
-  });
+  const [form, setForm] = useState({ first_name: "", middle_name: "", last_name: "", suffix: "N/A", student_id: "", section: "", strand: "ICT", email: "" });
+  const [generatedCredentials, setGeneratedCredentials] = useState<{ name: string; email: string; password: string; email_sent: boolean; email_error?: string }[]>([]);
 
-  const [touched, setTouched] = useState({ email: false, password: false });
+  const [touched, setTouched] = useState({ email: false });
 
   function showToast(msg: string, type: "success" | "error") {
     setToast({ msg, type });
@@ -386,15 +317,10 @@ export default function AccountsTab({
     ? "Please enter a valid email (e.g. juan@tsc.edu.ph)"
     : undefined;
 
-  const passwordError = touched.password && form.password && form.password.length < 8
-    ? "Password must be at least 8 characters"
-    : undefined;
-
   async function handleCreateStudent() {
-    if (!form.full_name.trim())                          { showToast("Full name is required.", "error"); return; }
+    if (!form.first_name.trim() || !form.last_name.trim()) { showToast("First name and last name are required.", "error"); return; }
     if (!form.student_id.trim())                         { showToast("Student ID is required.", "error"); return; }
     if (!form.email.trim() || !isValidEmail(form.email)) { setTouched((p) => ({ ...p, email: true })); showToast("Please enter a valid email address.", "error"); return; }
-    if (form.password.length < 8)                        { setTouched((p) => ({ ...p, password: true })); showToast("Password must be at least 8 characters.", "error"); return; }
 
     setLoading(true);
     try {
@@ -405,11 +331,13 @@ export default function AccountsTab({
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to create account");
-      showToast(`Account created for ${form.full_name}!`, "success");
-      setForm({ full_name: "", student_id: "", section: "", strand: "ICT", email: "", password: "" });
-      setTouched({ email: false, password: false });
+      const fullName = [form.first_name.trim(), form.middle_name.trim(), form.last_name.trim(), form.suffix === "N/A" ? "" : form.suffix].filter(Boolean).join(" ");
+      showToast(json.email_sent ? `Account created and temporary password emailed to ${form.email}.` : `Account created, but email failed: ${json.email_error ?? "unknown email error"}.`, json.email_sent ? "success" : "error");
+      setGeneratedCredentials([{ name: fullName, email: form.email, password: json.temporary_password, email_sent: json.email_sent, email_error: json.email_error }]);
+      setForm({ first_name: "", middle_name: "", last_name: "", suffix: "N/A", student_id: "", section: "", strand: "ICT", email: "" });
+      setTouched({ email: false });
       setStudents((prev) => [...prev, {
-        id: json.id, full_name: form.full_name, student_id: form.student_id,
+        id: json.id, full_name: fullName, student_id: form.student_id,
         section: form.section || null, strand: form.strand || null, role: "voter",
       }]);
     } catch (err) {
@@ -418,25 +346,22 @@ export default function AccountsTab({
     setLoading(false);
   }
 
-  async function handleToggleActive(id: string, name: string, currentRole: string) {
-    const isDeactivating = currentRole === "voter";
-    const newRole        = isDeactivating ? "inactive" : "voter";
+  async function handleToggleActive(id: string, name: string, currentlyActive: boolean) {
+    const isDeactivating = currentlyActive;
     const msg            = isDeactivating
       ? `Deactivate account for ${name}? They won't be able to log in.`
       : `Reactivate account for ${name}? They will be able to log in again.`;
 
     if (!confirm(msg)) return;
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.from("profiles").update({ role: newRole }).eq("id", id);
-    if (error) {
-      showToast(`Failed to ${isDeactivating ? "deactivate" : "reactivate"} account`, "error");
-    } else {
-      showToast(
-        isDeactivating ? `${name} has been deactivated` : `${name} has been reactivated`,
-        "success"
-      );
-      setStudents((prev) => prev.map((s) => s.id === id ? { ...s, role: newRole } : s));
+    try {
+      const response = await fetch("/api/admin/student-active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ student_id: id, is_active: !currentlyActive }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Account update failed");
+      showToast(isDeactivating ? `${name} has been deactivated` : `${name} has been reactivated`, "success");
+      setStudents((prev) => prev.map((s) => s.id === id ? { ...s, is_active: !currentlyActive } : s));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : `Failed to ${isDeactivating ? "deactivate" : "reactivate"} account`, "error");
     }
     setLoading(false);
   }
@@ -449,23 +374,24 @@ export default function AccountsTab({
       const lines = text.trim().split("\n").slice(1);
       let created = 0, failed = 0;
       const errors: string[] = [];
+      const credentials: { name: string; email: string; password: string; email_sent: boolean; email_error?: string }[] = [];
 
       for (const line of lines) {
         if (!line.trim()) continue;
         const cols = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-        const [full_name, student_id, section, strand, email, password] = cols;
+        const [first_name, middle_name, last_name, suffix, student_id, section, strand, email] = cols;
 
-        if (!full_name || !email || !password) { failed++; errors.push(`Skipped: missing fields — "${line.slice(0, 40)}"`); continue; }
-        if (!isValidEmail(email))               { failed++; errors.push(`Skipped ${full_name}: invalid email`); continue; }
-        if (password.length < 8)                { failed++; errors.push(`Skipped ${full_name}: password too short`); continue; }
+        if (!first_name || !last_name || !student_id || !email) { failed++; errors.push(`Skipped: missing required fields — "${line.slice(0, 40)}"`); continue; }
+        if (!isValidEmail(email)) { failed++; errors.push(`Skipped ${first_name} ${last_name}: invalid email`); continue; }
 
-        const res  = await fetch("/api/admin/create-student", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ full_name, student_id, section, strand, email, password }) });
+        const res  = await fetch("/api/admin/create-student", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ first_name, middle_name, last_name, suffix, student_id, section, strand, email }) });
         const json = await res.json();
-        if (res.ok) { created++; } else { failed++; errors.push(`${full_name}: ${json.error}`); }
+        if (res.ok) { created++; credentials.push({ name: json.full_name, email, password: json.temporary_password, email_sent: json.email_sent, email_error: json.email_error }); } else { failed++; errors.push(`${first_name} ${last_name}: ${json.error}`); }
       }
 
       if (errors.length > 0) console.warn("CSV errors:", errors);
       showToast(`Imported ${created} account${created !== 1 ? "s" : ""}${failed > 0 ? ` (${failed} skipped)` : ""}!`, created > 0 ? "success" : "error");
+      if (credentials.length) setGeneratedCredentials(credentials);
       setCsvFile(null);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to import CSV", "error");
@@ -474,7 +400,7 @@ export default function AccountsTab({
   }
 
   function downloadTemplate() {
-    const csv = ["full_name,student_id,section,strand,email,password", "Juan Dela Cruz,202310001,11 Lovelace,ICT,juan@tsc.edu.ph,Password123", "Maria Santos,202310002,11 Darwin,STEM,maria@tsc.edu.ph,Password123"].join("\n");
+    const csv = ["first_name,middle_name,last_name,suffix,student_id,section,strand,email", "Juan,,Dela Cruz,N/A,202310001,11 Lovelace,ICT,juan@tsc.edu.ph", "Maria,Isabel,Santos,Jr.,202310002,11 Darwin,STEM,maria@tsc.edu.ph"].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
@@ -517,12 +443,21 @@ export default function AccountsTab({
         </div>
       )}
 
+      {generatedCredentials.length > 0 && (
+        <div role="status" style={{ border: "1px solid #86efac", background: "#f0fdf4", borderRadius: 12, padding: 18, color: "#14532d" }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Temporary password delivery</div>
+          <div style={{ fontSize: 13, marginBottom: 10 }}>The app emails each password. Passwords are shown here as a backup. The 15-day change period starts at the student’s first successful login.</div>
+          <div style={{ display: "grid", gap: 8 }}>{generatedCredentials.map((credential) => <div key={credential.email} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: "#fff", border: "1px solid #bbf7d0", borderRadius: 8, padding: 10 }}><div><strong>{credential.name}</strong><div style={{ fontSize: 12 }}>{credential.email}</div><div style={{ fontSize: 12, fontWeight: 700, color: credential.email_sent ? "#15803d" : "#be123c", margin: "3px 0" }}>{credential.email_sent ? "Temporary password email sent" : `Email failed: ${credential.email_error ?? "unknown email error"}`}</div><code style={{ fontSize: 14, userSelect: "all" }}>{credential.password}</code></div><button type="button" onClick={() => { void navigator.clipboard.writeText(credential.password); showToast("Temporary password copied.", "success"); }} style={{ border: 0, borderRadius: 7, padding: "8px 12px", background: "#0d6b34", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Copy</button></div>)}</div>
+          <button type="button" onClick={() => setGeneratedCredentials([])} style={{ marginTop: 10, border: "1px solid #bbf7d0", borderRadius: 7, padding: "8px 12px", background: "#fff", color: "#14532d", cursor: "pointer" }}>Dismiss</button>
+        </div>
+      )}
+
       {/* Modals */}
       {resetTarget && (
         <ResetPasswordModal
           student={resetTarget}
           onClose={() => setResetTarget(null)}
-          onSuccess={(name) => { showToast(`Password reset for ${name}!`, "success"); }}
+          onSuccess={(name, emailSent, emailError) => { showToast(emailSent ? `Password reset and emailed to ${name}.` : `Password reset for ${name}, but email failed: ${emailError ?? "unknown email error"}.`, emailSent ? "success" : "error"); setStudents((prev) => prev.map((s) => s.id === resetTarget.id ? { ...s, is_active: true } : s)); }}
         />
       )}
       {deleteTarget && (
@@ -551,7 +486,7 @@ export default function AccountsTab({
             <input ref={fileRef} type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)} />
           </div>
           <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-            Required columns: <code style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: "4px" }}>full_name, student_id, section, strand, email, password</code>
+            Required columns: <code style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: "4px" }}>first_name, middle_name, last_name, suffix, student_id, section, strand, email</code>. A temporary password is generated for each student.
           </div>
           <div style={{ display: "flex", gap: "8px" }}>
             <button style={btnStyle("secondary")} onClick={downloadTemplate}>
@@ -567,7 +502,15 @@ export default function AccountsTab({
       {/* Add Single Student */}
       <SectionCard icon="ti-user-plus" iconBg="#dcfce7" iconColor="#15803d" title="Add Single Student" subtitle="Manually create one student account">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <InputField label="Full Name *"          value={form.full_name}   onChange={(e) => setForm({ ...form, full_name:   e.target.value })} placeholder="e.g. Juan Dela Cruz" />
+          <InputField label="First Name *" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} placeholder="e.g. Juan" />
+          <InputField label="Middle Name (optional)" value={form.middle_name} onChange={(e) => setForm({ ...form, middle_name: e.target.value })} placeholder="e.g. Santos" />
+          <InputField label="Last Name *" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} placeholder="e.g. Dela Cruz" />
+          <div>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", marginBottom: "5px" }}>Suffix</div>
+            <select value={form.suffix} onChange={(e) => setForm({ ...form, suffix: e.target.value })} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", fontFamily: "var(--font-open-sans), sans-serif", color: "#1a2e1f", outline: "none", background: "#f8fafc" }}>
+              {["N/A", "Jr.", "Sr.", "II", "III", "IV"].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
           <InputField label="Student ID *"         value={form.student_id}  onChange={(e) => setForm({ ...form, student_id:  e.target.value })} placeholder="e.g. 202310001" />
           <InputField label="Section"              value={form.section}     onChange={(e) => setForm({ ...form, section:     e.target.value })} placeholder="e.g. 11 Lovelace" />
           <div>
@@ -577,7 +520,7 @@ export default function AccountsTab({
             </select>
           </div>
           <InputField label="Email *" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} onBlur={() => setTouched((p) => ({ ...p, email: true }))} placeholder="e.g. juan@tsc.edu.ph" error={emailError} />
-          <InputField label="Temporary Password *" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onBlur={() => setTouched((p) => ({ ...p, password: true }))} placeholder="Min. 8 characters" error={passwordError} />
+          <div style={{ gridColumn: "1 / -1", fontSize: 12, color: "#64748b", background: "#f8fafc", borderRadius: 8, padding: "10px 12px" }}>A secure temporary password will be generated automatically and shown once after account creation.</div>
         </div>
         <button style={{ ...btnStyle("primary"), marginTop: "16px" }} onClick={handleCreateStudent} disabled={loading}>
           <i className="ti ti-user-plus" aria-hidden="true" />{loading ? "Creating…" : "Create Account"}
@@ -613,7 +556,7 @@ export default function AccountsTab({
                   <tr key={s.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #f1f5f9" : "none" }}>
                     <td style={{ padding: "10px 12px", fontWeight: 600, color: "#1a2e1f" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: s.role === "voter" ? "#0d6b34" : "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+                        <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: s.is_active !== false ? "#0d6b34" : "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700, color: "#fff", flexShrink: 0 }}>
                           {s.full_name.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase()}
                         </div>
                         {s.full_name}
@@ -623,8 +566,8 @@ export default function AccountsTab({
                     <td style={{ padding: "10px 12px", color: "#64748b" }}>{s.section ?? "—"}</td>
                     <td style={{ padding: "10px 12px", color: "#64748b" }}>{s.strand ?? "—"}</td>
                     <td style={{ padding: "10px 12px" }}>
-                      <span style={{ background: s.role === "voter" ? "#dcfce7" : "#f1f5f9", color: s.role === "voter" ? "#15803d" : "#64748b", borderRadius: "4px", padding: "2px 8px", fontSize: "11px", fontWeight: 700 }}>
-                        {s.role === "voter" ? "Active" : "Inactive"}
+                      <span style={{ background: s.is_active !== false ? "#dcfce7" : "#f1f5f9", color: s.is_active !== false ? "#15803d" : "#64748b", borderRadius: "4px", padding: "2px 8px", fontSize: "11px", fontWeight: 700 }}>
+                        {s.is_active !== false ? "Active" : "Inactive"}
                       </span>
                     </td>
                     <td style={{ padding: "10px 12px" }}>
@@ -639,10 +582,10 @@ export default function AccountsTab({
                         </button>
 
                         {/* Deactivate / Reactivate */}
-                        {s.role === "voter" ? (
+                        {s.is_active !== false ? (
                           <button
                             style={{ ...btnStyle("danger"), padding: "5px 10px", fontSize: "11px" }}
-                            onClick={() => handleToggleActive(s.id, s.full_name, s.role)}
+                            onClick={() => handleToggleActive(s.id, s.full_name, s.is_active !== false)}
                             disabled={loading}
                             title="Deactivate account"
                           >
@@ -651,7 +594,7 @@ export default function AccountsTab({
                         ) : (
                           <button
                             style={{ ...btnStyle("success"), padding: "5px 10px", fontSize: "11px" }}
-                            onClick={() => handleToggleActive(s.id, s.full_name, s.role)}
+                            onClick={() => handleToggleActive(s.id, s.full_name, s.is_active !== false)}
                             disabled={loading}
                             title="Reactivate account"
                           >

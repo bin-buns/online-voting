@@ -9,7 +9,7 @@ type Tab = "account" | "accessibility" | "about";
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "account",       label: "Account",       icon: "ti-user"       },
-  { key: "accessibility", label: "Accessibility",  icon: "ti-accessible" },
+  { key: "accessibility", label: "Display",        icon: "ti-adjustments" },
   { key: "about",         label: "About",          icon: "ti-info-circle"},
 ];
 

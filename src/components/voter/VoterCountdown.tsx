@@ -20,27 +20,33 @@ function getTimeLeft(target: string) {
 export default function VoterCountdown({
   targetDate,
   phase,
+  countdownLabel,
 }: {
   targetDate: string;
   phase: string;
+  countdownLabel: string;
 }) {
-  const [time, setTime] = useState(getTimeLeft(targetDate));
+  // Start with identical markup on the server and first client render; the
+  // countdown is initialized after mount to avoid Date.now() hydration drift.
+  const [time, setTime] = useState<ReturnType<typeof getTimeLeft> | null>(null);
 
   useEffect(() => {
+    if (phase === "closed" || phase === "results") {
+      setTime(null);
+      return;
+    }
+    setTime(getTimeLeft(targetDate));
     const interval = setInterval(() => setTime(getTimeLeft(targetDate)), 1000);
     return () => clearInterval(interval);
-  }, [targetDate]);
+  }, [targetDate, phase]);
 
-  const phaseLabel =
-    phase === "voting"  ? "Voting Closes In" :
-    phase === "results" ? "Results Are Live" :
-                          "Election Day";
+  const phaseLabel = countdownLabel;
 
   const units = [
-    { value: time.days,  label: "DAYS"    },
-    { value: time.hours, label: "HOURS"   },
-    { value: time.mins,  label: "MINUTES" },
-    { value: time.secs,  label: "SECONDS" },
+    { value: time?.days ?? 0,  label: "DAYS"    },
+    { value: time?.hours ?? 0, label: "HOURS"   },
+    { value: time?.mins ?? 0,  label: "MINUTES" },
+    { value: time?.secs ?? 0,  label: "SECONDS" },
   ];
 
   return (
@@ -60,6 +66,11 @@ export default function VoterCountdown({
         {phaseLabel}
       </div>
 
+      {phase === "closed" || phase === "results" ? (
+        <div role="status" style={{ color: "#fff", fontSize: "18px", fontWeight: 700, letterSpacing: "0.04em" }}>
+          {phase === "results" ? "Election results are available." : "Voting is closed. The countdown has stopped."}
+        </div>
+      ) : <>
       {/* Countdown boxes */}
 <div style={{ display: "flex", gap: "12px", fontSize: "initial" }}>
   {units.map(({ value, label }) => (
@@ -82,7 +93,7 @@ export default function VoterCountdown({
         letterSpacing: "0.02em",
         textShadow: "0 2px 8px rgba(0,0,0,0.25)",
       }}>
-        {pad(value)}
+        {time ? pad(value) : "--"}
       </span>
       <span style={{
         fontSize: "10px",          // ← already fixed, stays 10px
@@ -96,6 +107,7 @@ export default function VoterCountdown({
     </div>
   ))}
 </div>
+      </>}
     </div>
   );
 }

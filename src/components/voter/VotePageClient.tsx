@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { submitVote } from "@/app/actions/vote";
 import Image from "next/image";
 
 type Candidate = {
@@ -21,7 +21,6 @@ type Position = {
 };
 
 type Props = {
-  voterId: string;
   positions: Position[];
   candidates: Candidate[];
   votedPositionIds: string[];
@@ -147,7 +146,6 @@ function ConfirmModal({
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function VotePageClient({
-  voterId,
   positions,
   candidates,
   votedPositionIds,
@@ -201,21 +199,10 @@ export default function VotePageClient({
     setLoading(true);
     setError("");
 
-    const supabase = createClient();
+    const result = await submitVote(confirm.candidateId, confirm.positionId);
 
-    const { error: err } = await supabase.from("votes").insert({
-      voter_id:     voterId,
-      candidate_id: confirm.candidateId,   // null = abstain
-      position_id:  confirm.positionId,
-    });
-
-    if (err) {
-      // Unique constraint = already voted
-      if (err.code === "23505") {
-        setError("You have already voted for this position.");
-      } else {
-        setError(err.message);
-      }
+    if (!result.ok) {
+      setError(result.error);
       setLoading(false);
       setConfirm(null);
       return;

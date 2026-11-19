@@ -1,7 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendLoginOtp } from "@/lib/otp";
 
 export async function signIn(formData: FormData) {
   const email    = String(formData.get("email") ?? "").trim();
@@ -11,51 +14,32 @@ export async function signIn(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
 
-  // Check role and redirect accordingly
   const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+  if (!user) redirect("/login?error=Something went wrong. Try again.");
 
-    if (profile?.role === "admin") redirect("/admin/dashboard");
+  const admin = createAdminClient();
+  const { data: profile } = await admin.from("profiles").select("is_active,password_change_deadline").eq("id", user.id).maybeSingle();
+  if (profile?.is_active === false) {
+    await supabase.auth.signOut();
+    redirect("/login?error=This account is deactivated. Please contact the administrator.");
+  }
+  if (profile?.password_change_deadline && new Date(profile.password_change_deadline).getTime() <= Date.now()) {
+    await admin.from("profiles").update({ is_active: false }).eq("id", user.id);
+    await supabase.auth.signOut();
+    redirect("/login?error=Your temporary password expired. Please contact the administrator to reactivate your account.");
   }
 
-  redirect("/dashboard");
-}
+  const result = await sendLoginOtp(user.id, user.email!);
+  if (!result.ok) redirect(`/login?error=${encodeURIComponent(result.error!)}`);
 
-export async function signUp(formData: FormData) {
-  const email     = String(formData.get("email")      ?? "");
-  const password  = String(formData.get("password")   ?? "");
-  const studentId = String(formData.get("student_id") ?? "");
-  const fullName  = String(formData.get("full_name")  ?? "");
-  const role      = String(formData.get("role")       ?? "voter");
-  const strand    = String(formData.get("strand")     ?? "");
-  const section   = String(formData.get("section")    ?? "");
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        student_id: studentId,
-        full_name:  fullName,
-        role,
-        strand,
-        section,
-      },
-    },
+  const cookieStore = await cookies();
+  cookieStore.set("otp_pending", user.id, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 10,
+    path: "/",
   });
 
-  if (error) redirect(`/register?error=${encodeURIComponent(error.message)}`);
-  redirect("/login?message=Account created. You can log in with your email.");
-}
-
-export async function signOut() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  redirect("/login");
+  redirect("/verify-otp");
 }

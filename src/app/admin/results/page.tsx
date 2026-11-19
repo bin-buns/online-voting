@@ -12,18 +12,19 @@ type RawPosition = {
     votes: { id: string }[];
   }[];
 };
+type VoteRow = { voter_id: string; candidate_id: string | null; position_id: string };
 
 export default async function AdminResultsPage() {
   const supabase = await createClient();
 
   const [
-    { count: totalVoters },
-    { count: totalVotes },
+    { data: voterRows },
+    { data: voteRows },
     { data: posData },
     { data: electionSettings },
   ] = await Promise.all([
-    supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "voter"),
-    supabase.from("votes").select("*", { count: "exact", head: true }),
+    supabase.from("profiles").select("id").in("role", ["voter", "candidate"]),
+    supabase.from("votes").select("voter_id, candidate_id, position_id"),
     supabase.from("positions").select(`
       id, name, sort_order,
       candidates ( id, status, profiles ( full_name ), votes ( id ) )
@@ -91,6 +92,16 @@ export default async function AdminResultsPage() {
       }))
   );
 
+  const votes = (voteRows ?? []) as VoteRow[];
+  const totalVoters = voterRows?.length ?? 0;
+  const totalVotes = new Set(votes.map((vote) => vote.voter_id)).size;
+  const ballotCounts: Record<string, { total: number; abstentions: number }> = {};
+  votes.forEach((vote) => {
+    ballotCounts[vote.position_id] ??= { total: 0, abstentions: 0 };
+    ballotCounts[vote.position_id].total += 1;
+    if (!vote.candidate_id) ballotCounts[vote.position_id].abstentions += 1;
+  });
+
   let positionsDecided = 0;
   ((posData as unknown as RawPosition[]) ?? []).forEach((pos) => {
     const max = Math.max(0, ...(pos.candidates ?? [])
@@ -104,6 +115,8 @@ export default async function AdminResultsPage() {
       initialStats={{
         totalVotes:      totalVotes ?? 0,
         totalVoters:     totalVoters ?? 0,
+        totalBallots:    votes.length,
+        ballotCounts,
         positionsDecided,
         totalPositions:  positions.length,
         winnersDecided:  positionsDecided,

@@ -153,7 +153,7 @@ export default function PosterCard({ poster, editable = false, onEdit, onDelete 
           height: 40px;
           border-radius: 50%;
           overflow: hidden;
-          background: linear-gradient(135deg, #1a56db, #7e3af2);
+          background: linear-gradient(135deg, #0d6b34, #24834c);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -195,9 +195,9 @@ export default function PosterCard({ poster, editable = false, onEdit, onDelete 
         .owner-badge {
           font-size: 10px;
           font-weight: 700;
-          color: #1a56db;
-          background: #eff6ff;
-          border: 1px solid #bfdbfe;
+          color: #0d6b34;
+          background: #ecfdf3;
+          border: 1px solid #bbf7d0;
           border-radius: 999px;
           padding: 2px 9px;
           text-transform: uppercase;
@@ -255,7 +255,7 @@ export default function PosterCard({ poster, editable = false, onEdit, onDelete 
         .read-more-btn {
           background: none;
           border: none;
-          color: #1a56db;
+          color: #0d6b34;
           font-size: 12.5px;
           font-weight: 600;
           cursor: pointer;
@@ -295,8 +295,8 @@ export default function PosterCard({ poster, editable = false, onEdit, onDelete 
           transition: background 0.15s, transform 0.1s;
         }
         .btn-edit {
-          background: #eff6ff;
-          color: #1a56db;
+          background: #ecfdf3;
+          color: #0d6b34;
         }
         .btn-edit:hover {
           background: #dbeafe;

@@ -1,12 +1,17 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { snapshotAndResetElection } from "@/lib/election-client";
+import { endElectionNow, resetAllVotes } from "@/app/actions/admin";
+
 
 type ConfirmModal = {
   title: string;
   message: string;
   confirmLabel: string;
   onConfirm: () => Promise<void>;
+  stage?: 1 | 2;
 } | null;
 
 function DangerRow({ title, subtitle, buttonLabel, icon, onClick }: {
@@ -66,9 +71,21 @@ function SectionCard({ icon, iconBg, iconColor, title, subtitle, children }: {
 }
 
 export default function ElectionTab() {
+  const router = useRouter();
   const [modal, setModal]   = useState<ConfirmModal>(null);
   const [loading, setLoading] = useState(false);
+  const [confirmWord, setConfirmWord] = useState("");
   const [toast, setToast]   = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [votingOpen, setVotingOpen] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.from("election_settings").select("voting_starts_at, voting_ends_at, is_active").eq("id", 1).maybeSingle().then(({ data }) => {
+      if (!data) return;
+      const now = Date.now();
+      setVotingOpen(data.is_active && now >= new Date(data.voting_starts_at).getTime() && now < new Date(data.voting_ends_at).getTime());
+    });
+  }, []);
 
   function showToast(msg: string, type: "success" | "error") {
     setToast({ msg, type });
@@ -76,7 +93,8 @@ export default function ElectionTab() {
   }
 
   function confirm(config: ConfirmModal) {
-    setModal(config);
+    setConfirmWord("");
+    setModal(config ? { ...config, stage: 1 } : null);
   }
 
   async function runAction(action: () => Promise<void>) {
@@ -91,52 +109,23 @@ export default function ElectionTab() {
   }
 
   async function resetVotes() {
-    const supabase = createClient();
-    const { error } = await supabase.from("votes").delete().neq("id", "");
-    if (error) throw new Error(error.message);
-    await fetch("/api/admin/audit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "Reset all votes", detail: "All cast votes were permanently deleted", category: "votes" }),
-    });
-    showToast("All votes have been reset successfully.", "success");
-  }
-
-  async function clearCandidates() {
-    const supabase = createClient();
-    const { error } = await supabase.from("candidates").delete().neq("id", "");
-    if (error) throw new Error(error.message);
-    await fetch("/api/admin/audit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "Cleared all candidates", detail: "All candidate applications removed", category: "election" }),
-    });
-    showToast("All candidates have been cleared.", "success");
-  }
-
-  async function clearPositions() {
-    const supabase = createClient();
-    const { error } = await supabase.from("positions").delete().neq("id", "");
-    if (error) throw new Error(error.message);
-    await fetch("/api/admin/audit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "Cleared all positions", detail: "All election positions removed", category: "election" }),
-    });
-    showToast("All positions have been cleared.", "success");
+    const result = await resetAllVotes();
+    showToast(`All votes have been reset successfully (${result.deletedCount} deleted).`, "success");
+    router.refresh();
   }
 
   async function fullReset() {
     const supabase = createClient();
-    await supabase.from("votes").delete().neq("id", "");
-    await supabase.from("candidates").delete().neq("id", "");
-    await supabase.from("positions").delete().neq("id", "");
+    const { error: votesError } = await supabase.from("votes").delete().not("id", "is", null);
+    if (votesError) throw new Error(votesError.message);
+    const { error: candidatesError } = await supabase.from("candidates").delete().not("id", "is", null);
+    if (candidatesError) throw new Error(candidatesError.message);
     await fetch("/api/admin/audit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "Full election reset", detail: "All votes, candidates, and positions were deleted", category: "votes" }),
+      body: JSON.stringify({ action: "Full election reset", detail: "All votes and candidate applications were deleted; ballot positions were preserved", category: "votes" }),
     });
-    showToast("Full election reset completed.", "success");
+    showToast("Election reset completed. Ballot positions were preserved.", "success");
   }
 
   async function exportCSV() {
@@ -191,14 +180,20 @@ export default function ElectionTab() {
   }
 
   async function archiveElection() {
-    const timestamp = new Date().toISOString().slice(0, 10);
-    await fetch("/api/admin/audit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "Election archived", detail: `Election data archived on ${timestamp}`, category: "election" }),
-    });
-    showToast("Election archived successfully!", "success");
+  const supabase = createClient();
+
+  const { data: settings, error: settingsError } = await supabase
+    .from("election_settings")
+    .select("*")
+    .eq("is_active", true)
+    .single();
+
+  if (settingsError || !settings) {
+    throw new Error("No active election found to archive.");
   }
+
+  await snapshotAndResetElection(supabase, settings, { autoArchived: false });
+}
 
   const btnStyle = (variant: "primary" | "secondary") => ({
     display: "inline-flex" as const, alignItems: "center" as const, gap: "7px",
@@ -243,17 +238,18 @@ export default function ElectionTab() {
             </div>
             <div style={{ padding: "24px" }}>
               <p style={{ fontSize: "14px", color: "#475569", marginBottom: "20px", lineHeight: 1.6 }}>{modal.message}</p>
+              {modal.stage === 2 && <div style={{ marginBottom: 16 }}><label htmlFor="danger-confirm-word" style={{ display:"block",fontSize:12,fontWeight:700,marginBottom:6 }}>Type CONFIRM to enable this irreversible action</label><input id="danger-confirm-word" value={confirmWord} onChange={e=>setConfirmWord(e.target.value)} autoComplete="off" style={{width:"100%",padding:10,border:"1px solid #cbd5e1",borderRadius:8}} /></div>}
               <div style={{ display: "flex", gap: "10px" }}>
                 <button onClick={() => setModal(null)} style={{ ...btnStyle("secondary"), flex: 1 }}>
                   Cancel
                 </button>
                 <button
-                  onClick={() => runAction(modal.onConfirm)}
-                  disabled={loading}
+                  onClick={() => modal.stage === 1 ? setModal({ ...modal, stage: 2 }) : runAction(modal.onConfirm)}
+                  disabled={loading || (modal.stage === 2 && confirmWord.trim() !== "CONFIRM")}
                   style={{ flex: 1, padding: "9px 16px", borderRadius: "9px", border: "none", background: "#be123c", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-open-sans), sans-serif", opacity: loading ? 0.6 : 1 }}
                 >
                   <i className="ti ti-alert-triangle" aria-hidden="true" style={{ marginRight: "6px" }} />
-                  {loading ? "Processing…" : modal.confirmLabel}
+                  {loading ? "Processing…" : modal.stage === 1 ? "Review and Continue" : modal.confirmLabel}
                 </button>
               </div>
             </div>
@@ -270,7 +266,18 @@ export default function ElectionTab() {
           <button style={btnStyle("secondary")} onClick={exportVotersList}>
             <i className="ti ti-users" aria-hidden="true" />Export Voters List
           </button>
-          <button style={btnStyle("secondary")} onClick={archiveElection}>
+          <button
+            style={btnStyle("secondary")}
+            onClick={() => confirm({
+              title: "Archive This Election?",
+              message: "This will snapshot the current results into the archive, then clear all votes, candidates, and positions so you can set up the next election. This cannot be undone.",
+              confirmLabel: "Yes, Archive Election",
+              onConfirm: async () => {
+                await archiveElection();
+                router.push("/admin/settings/archive");
+              },
+            })}
+          >
             <i className="ti ti-archive" aria-hidden="true" />Archive Election
           </button>
         </div>
@@ -278,6 +285,18 @@ export default function ElectionTab() {
 
       {/* Danger Zone */}
       <SectionCard icon="ti-alert-triangle" iconBg="#ffe4e6" iconColor="#be123c" title="Danger Zone" subtitle="Irreversible actions — each requires confirmation before executing">
+        {votingOpen && <DangerRow
+          title="End Voting Now"
+          subtitle="Close the ballot immediately. Results still follow the scheduled release time."
+          buttonLabel="End Voting"
+          icon="ti-player-stop"
+          onClick={() => confirm({
+            title: "End Voting Now?",
+            message: "Voters will no longer be able to submit ballots. The scheduled results release time stays in place.",
+            confirmLabel: "Yes, End Voting Now",
+            onConfirm: async () => { await endElectionNow(); setVotingOpen(false); router.refresh(); },
+          })}
+        />}
         <DangerRow
           title="Reset All Votes"
           subtitle="Permanently deletes all cast votes. Cannot be undone."
@@ -291,37 +310,13 @@ export default function ElectionTab() {
           })}
         />
         <DangerRow
-          title="Clear All Candidates"
-          subtitle="Removes all candidate applications and approvals."
-          buttonLabel="Clear Candidates"
-          icon="ti-user-x"
-          onClick={() => confirm({
-            title: "Clear All Candidates?",
-            message: "This will remove all candidate applications including approved ones. All associated votes will also be affected. Cannot be undone.",
-            confirmLabel: "Yes, Clear Candidates",
-            onConfirm: clearCandidates,
-          })}
-        />
-        <DangerRow
-          title="Clear All Positions"
-          subtitle="Removes all election positions. Affects candidates too."
-          buttonLabel="Clear Positions"
-          icon="ti-trash"
-          onClick={() => confirm({
-            title: "Clear All Positions?",
-            message: "This will remove all positions. Since candidates are linked to positions, this will also remove all candidates and votes. Cannot be undone.",
-            confirmLabel: "Yes, Clear Positions",
-            onConfirm: clearPositions,
-          })}
-        />
-        <DangerRow
           title="Full Election Reset"
-          subtitle="Resets everything — votes, candidates, and positions."
+          subtitle="Removes all votes and candidate applications while keeping ballot positions."
           buttonLabel="Full Reset"
           icon="ti-alert-triangle"
           onClick={() => confirm({
             title: "Full Election Reset?",
-            message: "This is the most destructive action. It will permanently delete ALL votes, candidates, and positions. The system will be completely blank. This CANNOT be undone.",
+            message: "This permanently deletes ALL votes and candidate applications. Your ballot positions will remain available for the next election. This CANNOT be undone.",
             confirmLabel: "Yes, Reset Everything",
             onConfirm: fullReset,
           })}

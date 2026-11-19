@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Oswald, Open_Sans } from "next/font/google";
 import "./globals.css";
+import AccessibilityController from "@/components/AccessibilityController";
 
 const oswald = Oswald({
   subsets: ["latin"],
@@ -29,7 +30,7 @@ export default function RootLayout({
       <head>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
       </head>
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased"><AccessibilityController />{children}</body>
     </html>
   );
 }

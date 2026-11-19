@@ -126,7 +126,7 @@ export default function SystemTab() {
           show_results:     settings.show_results,
           maintenance_mode: settings.maintenance_mode,
           logo_url:         logoUrl,
-        });
+        }, { onConflict: "id" });
       if (error) throw new Error(error.message);
 
       await fetch("/api/admin/audit", {
@@ -257,23 +257,6 @@ export default function SystemTab() {
             </div>
           </div>
         )}
-      </SectionCard>
-
-      {/* System info */}
-      <SectionCard icon="ti-info-circle" iconBg="#e0f2fe" iconColor="#0369a1" title="System Information" subtitle="Current build and version details">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-          {[
-            { label: "System",    value: "Smart Voting System"    },
-            { label: "School",    value: "Theresian School of Cavite" },
-            { label: "Stack",     value: "Next.js 15 + Supabase"  },
-            { label: "Subject",   value: "ITEC 101A"               },
-          ].map(({ label, value }) => (
-            <div key={label} style={{ background: "#f8fafc", borderRadius: "10px", padding: "12px 14px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>{label}</div>
-              <div style={{ fontSize: "13px", fontWeight: 600, color: "#1a2e1f" }}>{value}</div>
-            </div>
-          ))}
-        </div>
       </SectionCard>
 
       {/* Save */}

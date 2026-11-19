@@ -70,7 +70,6 @@ export default async function VotePage() {
 
   return (
     <VotePageClient
-      voterId={session.profile.id}
       positions={positions}
       candidates={candidates}
       votedPositionIds={Array.from(votedPositionIds)}

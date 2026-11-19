@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionProfile } from "@/lib/auth";
 import Image from "next/image";
 import Link from "next/link";
+import NotificationBell from "@/components/NotificationBell";
 
 export default async function DashboardLayout({
   children,
@@ -15,6 +16,7 @@ export default async function DashboardLayout({
 
   return (
     <>
+    <NotificationBell userId={session.user.id} role={session.profile.role} />
       {/* ── Sidebar — truly fixed, never moves ── */}
       <aside
         aria-label="Voter sidebar"
@@ -76,11 +78,11 @@ export default async function DashboardLayout({
   { href: "/dashboard",            icon: "ti-home",      label: "Home"             },
   { href: "/dashboard/candidacy",  icon: "ti-file-text", label: "Submit Candidacy" },
   ...(profile.role === "candidate" ? [
-    { href: "/dashboard/campaign", icon: "ti-speakerphone", label: "My Posters" },
+    { href: "/dashboard/campaign", icon: "ti-speakerphone", label: "Campaign Posts" },
   ] : []),
   { href: "/dashboard/candidates", icon: "ti-users",     label: "Candidates"       },
   { href: "/dashboard/vote",       icon: "ti-writing",   label: "Vote"             },
-  { href: "/dashboard/results",    icon: "ti-trophy",    label: "Election Result"  },
+  { href: "/dashboard/results",    icon: "ti-trophy",    label: "Election Results"  },
   { href: "/dashboard/settings",   icon: "ti-settings",  label: "Settings"         },
 ].map(({ href, icon, label }) => (
             <Link key={href} href={href} style={{

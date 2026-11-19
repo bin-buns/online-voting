@@ -5,9 +5,12 @@ import { createClient } from "@/lib/supabase/client";
 type ElectionSettings = {
   id: string;
   title: string;
+  candidate_registration_starts_at: string;
+  candidate_registration_ends_at: string;
   voting_starts_at: string;
   voting_ends_at: string;
   results_visible_at: string;
+  archive_at: string;
   is_active: boolean;
 };
 
@@ -23,6 +26,20 @@ function toManilaISO(localInput: string) {
   // Convert to UTC ISO string for storage
   const date = new Date(localInput + ":00+08:00");
   return date.toISOString();
+}
+
+function endAfter24Hours(localStart: string) {
+  if (!localStart) return "";
+  const end = new Date(new Date(toManilaISO(localStart)).getTime() + 24 * 60 * 60 * 1000);
+  return toLocalInput(end.toISOString());
+}
+
+function displayedEnd(startIso: string, endIso: string) {
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  return end > start && Date.now() >= end
+    ? toLocalInput(endIso)
+    : endAfter24Hours(toLocalInput(startIso));
 }
 
 function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
@@ -71,13 +88,16 @@ function PhaseIndicator({ phase }: { phase: string }) {
 
 export default function ScheduleTab() {
   const [settings, setSettings]   = useState<ElectionSettings | null>(null);
-  const [form, setForm]           = useState({
-    title:              "",
-    voting_starts_at:   "",
-    voting_ends_at:     "",
-    results_visible_at: "",
-    is_active:          true,
-  });
+  const [form, setForm] = useState({
+  title:              "",
+  candidate_registration_starts_at: "",
+  candidate_registration_ends_at: "",
+  voting_starts_at:   "",
+  voting_ends_at:     "",
+  results_visible_at: "",
+  archive_at:          "",
+  is_active:          true,
+});
   const [phase, setPhase]         = useState("upcoming");
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
@@ -95,10 +115,11 @@ export default function ScheduleTab() {
     const starts    = new Date(s.voting_starts_at).getTime();
     const ends      = new Date(s.voting_ends_at).getTime();
     const results   = new Date(s.results_visible_at).getTime();
+    if (now >= results) return "results";
+    if (!s.is_active) return "closed";
     if (now < starts)  return "upcoming";
     if (now < ends)    return "voting";
-    if (now < results) return "closed";
-    return "results";
+    return "closed";
   }
 
   useEffect(() => {
@@ -113,12 +134,15 @@ export default function ScheduleTab() {
         setSettings(data as ElectionSettings);
         setPhase(computePhase(data as ElectionSettings));
         setForm({
-          title:              data.title,
-          voting_starts_at:   toLocalInput(data.voting_starts_at),
-          voting_ends_at:     toLocalInput(data.voting_ends_at),
-          results_visible_at: toLocalInput(data.results_visible_at),
-          is_active:          data.is_active,
-        });
+  title:              data.title,
+  candidate_registration_starts_at: toLocalInput(data.candidate_registration_starts_at),
+  candidate_registration_ends_at: toLocalInput(data.candidate_registration_ends_at),
+  voting_starts_at:   toLocalInput(data.voting_starts_at),
+  voting_ends_at:     displayedEnd(data.voting_starts_at, data.voting_ends_at),
+  results_visible_at: toLocalInput(data.results_visible_at),
+  archive_at:          toLocalInput(data.archive_at),
+  is_active:          data.is_active,
+});
       }
       setLoading(false);
     }
@@ -126,18 +150,24 @@ export default function ScheduleTab() {
   }, []);
 
   function validate() {
-    const starts  = new Date(form.voting_starts_at).getTime();
-    const ends    = new Date(form.voting_ends_at).getTime();
-    const results = new Date(form.results_visible_at).getTime();
-
-    if (!form.title.trim())           return "Election title is required.";
-    if (!form.voting_starts_at)       return "Voting start date is required.";
-    if (!form.voting_ends_at)         return "Voting end date is required.";
-    if (!form.results_visible_at)     return "Results visible date is required.";
-    if (ends <= starts)               return "Voting end must be after voting start.";
-    if (results < ends)               return "Results date must be after voting ends.";
-    return "";
-  }
+  if (!form.title.trim())           return "Election title is required.";
+  if (!form.candidate_registration_starts_at || !form.candidate_registration_ends_at) return "Candidate registration start and end are required.";
+  if (!form.voting_starts_at)       return "Voting start date is required.";
+  if (!form.results_visible_at)     return "Results visible date is required.";
+  if (!form.archive_at)             return "Archive date is required.";
+  const registrationStarts = new Date(toManilaISO(form.candidate_registration_starts_at)).getTime();
+  const registrationEnds = new Date(toManilaISO(form.candidate_registration_ends_at)).getTime();
+  const starts  = new Date(toManilaISO(form.voting_starts_at)).getTime();
+  const ends    = starts + 24 * 60 * 60 * 1000;
+  const results = new Date(toManilaISO(form.results_visible_at)).getTime();
+  const archive = new Date(toManilaISO(form.archive_at)).getTime();
+  if (registrationEnds <= registrationStarts) return "Candidate registration end must be after its start.";
+  if (registrationEnds > starts) return "Candidate registration must end by the time voting starts.";
+  if (ends <= starts)               return "Voting end must be after voting start.";
+  if (results < ends)               return "Results date must be after voting ends.";
+  if (archive < results)            return "Archive date must be after results are visible.";
+  return "";
+}
 
   async function handleSave() {
     const err = validate();
@@ -148,12 +178,15 @@ export default function ScheduleTab() {
     try {
       const supabase = createClient();
       const payload = {
-        title:              form.title,
-        voting_starts_at:   toManilaISO(form.voting_starts_at),
-        voting_ends_at:     toManilaISO(form.voting_ends_at),
-        results_visible_at: toManilaISO(form.results_visible_at),
-        is_active:          form.is_active,
-      };
+  title:              form.title,
+  candidate_registration_starts_at: toManilaISO(form.candidate_registration_starts_at),
+  candidate_registration_ends_at: toManilaISO(form.candidate_registration_ends_at),
+  voting_starts_at:   toManilaISO(form.voting_starts_at),
+  voting_ends_at:     toManilaISO(form.voting_ends_at),
+  results_visible_at: toManilaISO(form.results_visible_at),
+  archive_at:          toManilaISO(form.archive_at),
+  is_active:          form.is_active,
+};
 
       const { error } = settings
         ? await supabase.from("election_settings").update(payload).eq("id", settings.id)
@@ -172,14 +205,34 @@ export default function ScheduleTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action:   "Election schedule updated",
-          detail:   `Title: "${form.title}" | Voting: ${form.voting_starts_at} → ${form.voting_ends_at} | Results: ${form.results_visible_at}`,
+          detail:   `Title: "${form.title}" | Registration: ${form.candidate_registration_starts_at} → ${form.candidate_registration_ends_at} | Voting: ${form.voting_starts_at} → ${form.voting_ends_at} | Results: ${form.results_visible_at}`,
           category: "election",
         }),
       });
 
+      let noticeMessage = "Schedule saved; student email could not be queued.";
+      let noticeStatus: "success" | "error" = "error";
+      try {
+        const noticeResponse = await fetch("/api/admin/election-notice", { method: "POST" });
+        const noticeResult = await noticeResponse.json().catch(() => ({})) as { queued?: boolean; reason?: string; error?: string; code?: string };
+        if (noticeResponse.ok && noticeResult.queued !== false) {
+          noticeMessage = "Schedule saved and student email queued.";
+          noticeStatus = "success";
+        } else if (noticeResponse.ok && noticeResult.queued === false) {
+          noticeMessage = `Schedule saved. ${noticeResult.reason ?? "The notice was already queued."}`;
+          noticeStatus = "success";
+        } else {
+          noticeMessage = noticeResult.code === "ADMIN_SESSION_REQUIRED"
+            ? `Schedule saved. ${noticeResult.error}`
+            : `Schedule saved, but student email could not be queued: ${noticeResult.error ?? "email service unavailable"}`;
+        }
+      } catch {
+        noticeMessage = "Schedule saved, but the student email service could not be reached.";
+      }
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-      showToast("Election schedule saved successfully!", "success");
+      showToast(noticeMessage, noticeStatus);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to save", "error");
     }
@@ -276,6 +329,25 @@ export default function ScheduleTab() {
           {/* Date grid */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
 
+            {/* Candidate registration window */}
+            <div>
+              <label style={labelStyle}>
+                <i className="ti ti-user-plus" aria-hidden="true" style={{ marginRight: "5px", color: "#0d6b34" }} />
+                Candidate Registration Starts *
+              </label>
+              <input type="datetime-local" style={fieldStyle} value={form.candidate_registration_starts_at}
+                onChange={(e) => setForm({ ...form, candidate_registration_starts_at: e.target.value })} />
+            </div>
+            <div>
+              <label style={labelStyle}>
+                <i className="ti ti-user-check" aria-hidden="true" style={{ marginRight: "5px", color: "#0d6b34" }} />
+                Candidate Registration Ends *
+              </label>
+              <input type="datetime-local" style={fieldStyle} value={form.candidate_registration_ends_at}
+                onChange={(e) => setForm({ ...form, candidate_registration_ends_at: e.target.value })} />
+              <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Must end no later than voting starts.</div>
+            </div>
+
             {/* Voting starts */}
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelStyle}>
@@ -286,7 +358,11 @@ export default function ScheduleTab() {
                 type="datetime-local"
                 style={fieldStyle}
                 value={form.voting_starts_at}
-                onChange={(e) => setForm({ ...form, voting_starts_at: e.target.value })}
+                onChange={(e) => setForm({
+                  ...form,
+                  voting_starts_at: e.target.value,
+                  voting_ends_at: endAfter24Hours(e.target.value),
+                })}
               />
               {form.voting_starts_at && (
                 <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
@@ -299,13 +375,13 @@ export default function ScheduleTab() {
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelStyle}>
                 <i className="ti ti-player-stop" aria-hidden="true" style={{ marginRight: "5px", color: "#be123c" }} />
-                Voting Ends *
+                Voting Ends (24 hours after opening)
               </label>
               <input
                 type="datetime-local"
                 style={fieldStyle}
                 value={form.voting_ends_at}
-                onChange={(e) => setForm({ ...form, voting_ends_at: e.target.value })}
+                readOnly
               />
               {form.voting_ends_at && (
                 <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
@@ -335,6 +411,29 @@ export default function ScheduleTab() {
                 </div>
               )}
             </div>
+              {/* Archive election */}
+<div style={{ gridColumn: "1 / -1" }}>
+  <label style={labelStyle}>
+    <i className="ti ti-archive" aria-hidden="true" style={{ marginRight: "5px", color: "#64748b" }} />
+    Archive Election *
+    <span style={{ fontWeight: 400, textTransform: "none", color: "#94a3b8", fontSize: "11px", marginLeft: "6px" }}>
+      Election moves to archive when this time passes
+    </span>
+  </label>
+  <input
+    type="datetime-local"
+    style={fieldStyle}
+    value={form.archive_at}
+    onChange={(e) => setForm({ ...form, archive_at: e.target.value })}
+  />
+  {form.archive_at && (
+    <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+      PST: {new Date(form.archive_at + ":00+08:00").toLocaleString("en-PH", { timeZone: "Asia/Manila", dateStyle: "full", timeStyle: "short" })}
+    </div>
+  )}
+</div>
+
+
           </div>
 
           {/* Active toggle */}
@@ -367,10 +466,13 @@ export default function ScheduleTab() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {[
-                  { icon: "ti-player-play", color: "#4ade80", label: "Voting Opens",  value: form.voting_starts_at   },
-                  { icon: "ti-player-stop", color: "#f87171", label: "Voting Closes", value: form.voting_ends_at     },
-                  { icon: "ti-trophy",      color: "#c084fc", label: "Results Live",  value: form.results_visible_at },
-                ].map(({ icon, color, label, value }) => (
+  { icon: "ti-user-plus", color: "#86efac", label: "Registration Opens", value: form.candidate_registration_starts_at },
+  { icon: "ti-user-check", color: "#a7f3d0", label: "Registration Closes", value: form.candidate_registration_ends_at },
+  { icon: "ti-player-play", color: "#4ade80", label: "Voting Opens",  value: form.voting_starts_at   },
+  { icon: "ti-player-stop", color: "#f87171", label: "Voting Closes", value: form.voting_ends_at     },
+  { icon: "ti-trophy",      color: "#c084fc", label: "Results Live",  value: form.results_visible_at },
+  { icon: "ti-archive",     color: "#94a3b8", label: "Archived",      value: form.archive_at         },
+].map(({ icon, color, label, value }) => (
                   <div key={label} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                     <i className={`ti ${icon}`} aria-hidden="true" style={{ fontSize: "16px", color, flexShrink: 0 }} />
                     <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", minWidth: "100px", fontWeight: 600 }}>{label}</div>

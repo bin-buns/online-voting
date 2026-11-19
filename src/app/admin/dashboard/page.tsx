@@ -13,14 +13,14 @@ export default async function AdminDashboardPage() {
   const supabase = await createClient();
 
   const [
-    { count: voterCount },
-    { count: voteCount },
+    { data: voterRows },
+    { data: voteRows },
     { count: approvedCandidates },
     { count: pendingCandidates },
     { data: positionsData },
   ] = await Promise.all([
-    supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "voter"),
-    supabase.from("votes").select("*", { count: "exact", head: true }),
+    supabase.from("profiles").select("id").in("role", ["voter", "candidate"]),
+    supabase.from("votes").select("voter_id"),
     supabase.from("candidates").select("*", { count: "exact", head: true }).eq("status", "approved"),
     supabase.from("candidates").select("*", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("positions").select(`
@@ -36,6 +36,8 @@ export default async function AdminDashboardPage() {
 
   const settings = await getElectionSettings();
   const phase = settings ? getElectionPhase(settings) : "upcoming";
+  const voterCount = voterRows?.length ?? 0;
+  const voteCount = new Set((voteRows ?? []).map((vote) => vote.voter_id)).size;
 
   const initialSnapshot = ((positionsData as unknown as PositionRow[]) ?? []).map((pos) => ({
   id: pos.id,
@@ -61,9 +63,9 @@ export default async function AdminDashboardPage() {
       bg: "#1a3a4a",
     },
     {
-      label: "Votes Cast",
+      label: "Voters Participated",
       value: voteCount ?? 0,
-      sub: voterCount ? `${Math.round(((voteCount ?? 0) / voterCount) * 100)}% turnout` : "0% turnout",
+      sub: voterCount ? `${Math.min(100, Math.round((voteCount / voterCount) * 100))}% turnout` : "0% turnout",
       subColor: "#4ade80",
       iconClass: "ti-checkbox",
       iconColor: "#86efac",

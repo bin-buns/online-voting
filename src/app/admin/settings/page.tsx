@@ -8,6 +8,7 @@ type ProfileRow = {
   section: string | null;
   strand: string | null;
   role: string;
+  is_active: boolean;
 };
 
 type AuditRow = {
@@ -25,8 +26,8 @@ export default async function AdminSettingsPage() {
   const [{ data: students }, { data: auditLogs }] = await Promise.all([
   supabase
     .from("profiles")
-    .select("id, full_name, student_id, section, strand, role")
-    .eq("role", "voter")
+    .select("id, full_name, student_id, section, strand, role, is_active")
+    .in("role", ["voter", "candidate"])
     .order("full_name", { ascending: true }),
   supabase
     .from("audit_logs")

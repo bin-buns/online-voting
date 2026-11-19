@@ -17,6 +17,8 @@ type Position = {
 type Stats = {
   totalVotes: number;
   totalVoters: number;
+  totalBallots: number;
+  ballotCounts: Record<string, { total: number; abstentions: number }>;
   positionsDecided: number;
   totalPositions: number;
   winnersDecided: number;
@@ -65,12 +67,12 @@ export default function ElectionResultClient({
   if (!votingEnded) return;
   
     const [
-      { count: totalVoters },
-      { count: totalVotes },
+      { data: voterRows },
+      { data: voteData },
       { data: posData },
     ] = await Promise.all([
-      supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "voter"),
-      supabase.from("votes").select("*", { count: "exact", head: true }),
+      supabase.from("profiles").select("id").in("role", ["voter", "candidate"]),
+      supabase.from("votes").select("voter_id, candidate_id, position_id"),
       supabase.from("positions").select(`
         id, name, sort_order,
         candidates ( id, profiles ( full_name ), votes ( id ), status )
@@ -80,6 +82,13 @@ export default function ElectionResultClient({
 
     const cands: Candidate[] = [];
     let positionsDecided = 0;
+    const voteRows = (voteData ?? []) as { voter_id: string; candidate_id: string | null; position_id: string }[];
+    const ballotCounts: Stats["ballotCounts"] = {};
+    voteRows.forEach((vote) => {
+      ballotCounts[vote.position_id] ??= { total: 0, abstentions: 0 };
+      ballotCounts[vote.position_id].total += 1;
+      if (!vote.candidate_id) ballotCounts[vote.position_id].abstentions += 1;
+    });
 
     ((posData as unknown as RawPosition[]) ?? []).forEach((pos) => {
       const posCands = (pos.candidates ?? [])
@@ -97,8 +106,10 @@ export default function ElectionResultClient({
 
     setCandidates(cands);
     setStats({
-      totalVotes:        totalVotes ?? 0,
-      totalVoters:       totalVoters ?? 0,
+      totalVotes:        new Set(voteRows.map((vote) => vote.voter_id)).size,
+      totalVoters:       voterRows?.length ?? 0,
+      totalBallots:      voteRows.length,
+      ballotCounts,
       positionsDecided,
       totalPositions:    posData?.length ?? 0,
       winnersDecided:    positionsDecided,
@@ -116,14 +127,14 @@ export default function ElectionResultClient({
   }, []);
 
   const turnoutPct = stats.totalVoters
-    ? Math.round((stats.totalVotes / stats.totalVoters) * 100)
+    ? Math.min(100, Math.round((stats.totalVotes / stats.totalVoters) * 100))
     : 0;
 
   const statCards = [
-    { label: "Total Votes Cast",     value: stats.totalVotes,      sub: `Of ${stats.totalVoters} voters`, subColor: "#7dd3fc", iconClass: "ti-checkbox",     iconColor: "#7dd3fc", bg: "#1a3a4a" },
+    { label: "Voters Participated",   value: stats.totalVotes,      sub: `Of ${stats.totalVoters} eligible voters`, subColor: "#7dd3fc", iconClass: "ti-checkbox",     iconColor: "#7dd3fc", bg: "#1a3a4a" },
     { label: "Turnout",              value: `${turnoutPct}%`,       sub: "Participation rate",             subColor: "#4ade80", iconClass: "ti-chart-pie",    iconColor: "#4ade80", bg: "#1a3a2a" },
     { label: "Positions Decided",    value: `${stats.positionsDecided}/${stats.totalPositions}`, sub: "With clear winner", subColor: "#a5b4fc", iconClass: "ti-layout-list", iconColor: "#a5b4fc", bg: "#2a2a4a" },
-    { label: "Winners Declared",     value: stats.winnersDecided,   sub: stats.winnersDecided ? "Finalized" : "Election ongoing", subColor: "#fcd34d", iconClass: "ti-trophy", iconColor: "#fcd34d", bg: "#3a2a1a" },
+    { label: "Ballots Recorded",     value: stats.totalBallots,     sub: "Across all positions", subColor: "#fcd34d", iconClass: "ti-trophy", iconColor: "#fcd34d", bg: "#3a2a1a" },
   ];
 
   return (
@@ -156,7 +167,8 @@ export default function ElectionResultClient({
             const posCands = candidates
               .filter((c) => c.position_id === pos.id)
               .sort((a, b) => b.vote_count - a.vote_count);
-            const totalPosVotes = posCands.reduce((s, c) => s + c.vote_count, 0);
+            const positionStats = stats.ballotCounts[pos.id] ?? { total: 0, abstentions: 0 };
+            const totalPosVotes = positionStats.total;
             const maxVotes = Math.max(1, ...posCands.map((c) => c.vote_count));
 
             return (
@@ -169,9 +181,9 @@ export default function ElectionResultClient({
                   {pos.name}
                 </div>
                 {posCands.map((c, i) => {
-                  const pct = totalPosVotes > 0 ? Math.round((c.vote_count / stats.totalVoters) * 100) : 0;
-                  const abstainPct = 100 - pct;
-                  const barW = Math.round((c.vote_count / maxVotes) * 100);
+                  const pct = totalPosVotes > 0 ? Math.min(100, Math.round((c.vote_count / totalPosVotes) * 100)) : 0;
+                  const abstainPct = totalPosVotes > 0 ? Math.min(100, Math.round((positionStats.abstentions / totalPosVotes) * 100)) : 0;
+                  const barW = Math.min(100, Math.round((c.vote_count / maxVotes) * 100));
                   const isWinner = i === 0 && c.vote_count > 0;
                   return (
                     <div key={c.id} style={{ display: "flex", alignItems: "flex-start", gap: "14px", paddingBottom: "14px", borderBottom: i < posCands.length - 1 ? "1px solid rgba(255,255,255,0.07)" : "none", marginBottom: i < posCands.length - 1 ? "14px" : 0 }}>
@@ -188,7 +200,7 @@ export default function ElectionResultClient({
                           )}
                         </div>
                         <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "8px" }}>
-                          {c.vote_count} votes · {pct}% · {abstainPct}% Abstain
+                          {c.vote_count} votes · {pct}% of ballots · {abstainPct}% abstained
                         </div>
                         <div style={{ height: "7px", background: "rgba(255,255,255,0.1)", borderRadius: "999px", overflow: "hidden" }}>
                           <div style={{ height: "100%", borderRadius: "999px", width: `${barW}%`, background: isWinner ? "#0d6b34" : "#94a3b8", transition: "width 0.6s ease" }} />

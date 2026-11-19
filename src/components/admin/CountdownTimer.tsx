@@ -25,23 +25,25 @@ export default function CountdownTimer({
   label: string;
   phase: string;
 }) {
-  const [time, setTime] = useState(getTimeLeft(targetDate));
+  const [time, setTime] = useState<ReturnType<typeof getTimeLeft> | null>(null);
 
   useEffect(() => {
+    if (phase === "closed") return;
+    setTime(getTimeLeft(targetDate));
     const interval = setInterval(() => setTime(getTimeLeft(targetDate)), 1000);
     return () => clearInterval(interval);
-  }, [targetDate]);
+  }, [targetDate, phase]);
 
   const phaseColor = phase === "voting"  ? "#4ade80" :
                      phase === "results" ? "#a5b4fc" : "#fcd34d";
   const phaseLabel = phase === "voting"  ? "Voting Open"     :
-                     phase === "results" ? "Results Visible" : "Upcoming";
+                     phase === "results" ? "Results Visible" : phase === "closed" ? "Voting Ended" : "Upcoming";
 
   const units = [
-    { value: time.days,  label: "Days"  },
-    { value: time.hours, label: "Hours" },
-    { value: time.mins,  label: "Mins"  },
-    { value: time.secs,  label: "Secs"  },
+    { value: time?.days,  label: "Days"  },
+    { value: time?.hours, label: "Hours" },
+    { value: time?.mins,  label: "Mins"  },
+    { value: time?.secs,  label: "Secs"  },
   ];
 
   return (
@@ -105,18 +107,22 @@ export default function CountdownTimer({
           {label}
         </p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: "12px" }}>
+        {phase === "closed" ? (
+          <div role="status" style={{ padding: "18px 0", color: "rgba(255,255,255,0.72)", fontSize: "15px", fontWeight: 700 }}>
+            Voting has ended. The countdown is stopped.
+          </div>
+        ) : <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: "12px" }}>
           {units.map(({ value, label: unitLabel }) => (
             <div key={unitLabel} className="cd-box">
               <span className="cd-number">
-                {pad(value)}
+                {value === undefined ? "--" : pad(value)}
               </span>
               <span className="cd-label">
                 {unitLabel}
               </span>
             </div>
           ))}
-        </div>
+        </div>}
       </div>
     </>
   );

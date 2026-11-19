@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionProfile } from "@/lib/auth";
 import AdminShell from "@/components/admin/AdminShell";
+import AutoArchiveChecker from "@/components/AutoArchiveChecker";
+import NotificationBell from "@/components/NotificationBell";
 
 export default async function AdminLayout({
   children,
@@ -15,6 +17,8 @@ export default async function AdminLayout({
 
   return (
     <AdminShell>
+      <AutoArchiveChecker />
+      <NotificationBell userId={session.user.id} role={session.profile.role} />
       <div style={{ display: "flex", minHeight: "100vh" }}>
       {/* ── Sidebar ── */}
       <aside
@@ -33,49 +37,6 @@ export default async function AdminLayout({
           overflowY: "auto", 
         }}
       >
-        {/* Accessibility toolbar */}
-        <div style={{
-          backgroundColor: "#0a5529",
-          padding: "8px 14px",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          borderBottom: "1px solid rgba(255,255,255,0.1)",
-        }}>
-          <span style={{
-            fontSize: "10.5px",
-            color: "rgba(255,255,255,0.6)",
-            fontWeight: 600,
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
-          }}>
-            Accessibility
-          </span>
-          <button title="Increase text size" aria-label="Increase text size" style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: "30px", height: "30px", borderRadius: "6px",
-            background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)",
-            color: "#fff", cursor: "pointer", fontSize: "14px", fontWeight: 700,
-            fontFamily: "'Open Sans', sans-serif",
-          }}>A+</button>
-          <button title="High contrast mode" aria-label="Toggle high contrast mode" style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: "30px", height: "30px", borderRadius: "6px",
-            background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)",
-            color: "#fff", cursor: "pointer", fontSize: "15px",
-          }}>
-            <i className="ti ti-circle-half-2" aria-hidden="true" />
-          </button>
-          <button title="Screen reader" aria-label="Toggle screen reader" style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: "30px", height: "30px", borderRadius: "6px",
-            background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)",
-            color: "#fff", cursor: "pointer", fontSize: "15px",
-          }}>
-            <i className="ti ti-volume" aria-hidden="true" />
-          </button>
-        </div>
-
         {/* Brand */}
         <div style={{
           padding: "22px 18px 18px",
@@ -113,7 +74,7 @@ export default async function AdminLayout({
             { href: "/admin/candidacy", icon: "ti-file-text", label: "Candidacy" },
             { href: "/admin/candidates",icon: "ti-users",     label: "Candidates" },
             { href: "/admin/votes",     icon: "ti-chart-bar", label: "Live Voting" },
-            { href: "/admin/results",   icon: "ti-trophy",    label: "Election Result" },
+            { href: "/admin/results",   icon: "ti-trophy",    label: "Election Results" },
             { href: "/admin/settings",  icon: "ti-settings",  label: "Settings" },
           ].map(({ href, icon, label }) => (
             <Link key={href} href={href} style={{

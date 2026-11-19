@@ -68,11 +68,36 @@ export default async function VoterDashboardPage() {
     photo_url:    p.candidates?.photo_url ?? null,
   }));
 
-  const targetDate = settings
-    ? phase === "upcoming" ? settings.voting_starts_at
-    : phase === "voting"   ? settings.voting_ends_at
-    :                        settings.results_visible_at
-    : null;
+  let countdownPhase = "closed";
+  let countdownLabel = "Voting Has Ended";
+  let targetDate: string | null = null;
+  if (settings?.is_active) {
+    const now = Date.now();
+    const registrationStarts = new Date(settings.candidate_registration_starts_at).getTime();
+    const registrationEnds = new Date(settings.candidate_registration_ends_at).getTime();
+    const votingStarts = new Date(settings.voting_starts_at).getTime();
+    if (now < registrationStarts) {
+      countdownPhase = "registration-start";
+      countdownLabel = "Candidate Registration Starts In";
+      targetDate = settings.candidate_registration_starts_at;
+    } else if (now < registrationEnds) {
+      countdownPhase = "registration-end";
+      countdownLabel = "Candidate Registration Closes In";
+      targetDate = settings.candidate_registration_ends_at;
+    } else if (now < votingStarts) {
+      countdownPhase = "upcoming";
+      countdownLabel = "Voting Starts In";
+      targetDate = settings.voting_starts_at;
+    } else if (phase === "voting") {
+      countdownPhase = "voting";
+      countdownLabel = "Voting Ends In";
+      targetDate = settings.voting_ends_at;
+    } else if (phase === "results") {
+      countdownPhase = "results";
+      countdownLabel = "Results Are Live";
+      targetDate = settings.results_visible_at;
+    }
+  }
 
   return (
     <>
@@ -158,7 +183,7 @@ export default async function VoterDashboardPage() {
           </p>
 
           {targetDate ? (
-            <VoterCountdown targetDate={targetDate} phase={phase} />
+            <VoterCountdown targetDate={targetDate} phase={countdownPhase} countdownLabel={countdownLabel} />
           ) : (
             <div style={{
               background: "rgba(255,255,255,0.15)", backdropFilter: "blur(10px)",

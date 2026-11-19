@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import Image from "next/image";
 
 type Candidate = {
   id: string;
   full_name: string;
+  photo_url: string | null;
   vote_count: number;
   position_id: string;
 };
@@ -20,6 +22,11 @@ type Stats = {
   notVoted: number;
 };
 
+type BallotMetric = { total: number; abstentions: number };
+type Participant = { id: string; full_name: string; hasVoted: boolean };
+type VoteRow = { voter_id: string; candidate_id: string | null; position_id: string };
+type VoterRow = { id: string; full_name: string };
+
 type RawPosition = {
   id: string;
   name: string;
@@ -28,7 +35,7 @@ type RawPosition = {
     id: string;
     status: string;
     profiles: { full_name: string } | null;
-    votes: { id: string }[];
+    photo_url: string | null;
   }[];
 };
 
@@ -36,6 +43,7 @@ type ElectionSettings = {
   voting_starts_at: string;
   voting_ends_at: string;
   results_visible_at: string;
+  is_active: boolean;
 };
 
 function getInitials(name: string) {
@@ -48,7 +56,7 @@ function computePhase(s: ElectionSettings) {
   const ends    = new Date(s.voting_ends_at).getTime();
   const results = new Date(s.results_visible_at).getTime();
   if (now < starts)  return "upcoming";
-  if (now < ends)    return "voting";
+  if (s.is_active && now < ends) return "voting";
   if (now < results) return "closed";
   return "results";
 }
@@ -57,39 +65,59 @@ export default function LiveVotingClient({
   initialStats,
   initialPositions,
   initialCandidates,
+  initialBallots,
+  initialParticipants,
   phase: initialPhase = "upcoming",
 }: {
   initialStats:      Stats;
   initialPositions:  Position[];
   initialCandidates: Candidate[];
+  initialBallots: Record<string, BallotMetric>;
+  initialParticipants: Participant[];
   phase:             string;
 }) {
   const [stats, setStats]           = useState<Stats>(initialStats);
   const [positions]                 = useState<Position[]>(initialPositions);
   const [candidates, setCandidates] = useState<Candidate[]>(initialCandidates);
+  const [ballots, setBallots] = useState<Record<string, BallotMetric>>(initialBallots);
+  const [participants, setParticipants] = useState<Participant[]>(initialParticipants);
   const [filterPos, setFilterPos]   = useState("all");
   const [currentPhase, setCurrentPhase] = useState(initialPhase);
 
   async function fetchData() {
     const supabase = createClient();
     const [
-      { count: totalVoters },
-      { count: voted },
+      { data: voterRows },
+      { data: voteRows },
       { data: posData },
       { data: settingsData },
     ] = await Promise.all([
-      supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "voter"),
-      supabase.from("votes").select("voter_id", { count: "exact", head: true }),
+      supabase.from("profiles").select("id, full_name").in("role", ["voter", "candidate"]),
+      supabase.from("votes").select("voter_id, candidate_id, position_id"),
       supabase.from("positions").select(`
         id, name, sort_order,
-        candidates ( id, status, profiles ( full_name ), votes ( id ) )
+        candidates ( id, status, photo_url, profiles ( full_name ) )
       `).order("sort_order", { ascending: true }),
-      supabase.from("election_settings").select("voting_starts_at, voting_ends_at, results_visible_at").single(),
+      supabase.from("election_settings").select("voting_starts_at, voting_ends_at, results_visible_at, is_active").single(),
     ]);
 
-    const tv = totalVoters ?? 0;
-    const v  = voted ?? 0;
-    setStats({ totalVoters: tv, voted: v, notVoted: tv - v });
+    const voters = (voterRows ?? []) as VoterRow[];
+    const votes = (voteRows ?? []) as VoteRow[];
+    const participated = new Set(votes.map((vote) => vote.voter_id));
+    const tv = voters.length;
+    const v = participated.size;
+    setStats({ totalVoters: tv, voted: v, notVoted: Math.max(0, tv - v) });
+    setParticipants(voters.map((voter) => ({ id: voter.id, full_name: voter.full_name, hasVoted: participated.has(voter.id) })));
+
+    const ballotMetrics: Record<string, BallotMetric> = {};
+    const candidateVotes = new Map<string, number>();
+    for (const vote of votes) {
+      ballotMetrics[vote.position_id] ??= { total: 0, abstentions: 0 };
+      ballotMetrics[vote.position_id].total += 1;
+      if (vote.candidate_id) candidateVotes.set(vote.candidate_id, (candidateVotes.get(vote.candidate_id) ?? 0) + 1);
+      else ballotMetrics[vote.position_id].abstentions += 1;
+    }
+    setBallots(ballotMetrics);
 
     if (settingsData) {
       setCurrentPhase(computePhase(settingsData as ElectionSettings));
@@ -103,7 +131,8 @@ export default function LiveVotingClient({
           cands.push({
             id:          c.id,
             full_name:   c.profiles?.full_name ?? "Unknown",
-            vote_count:  c.votes?.length ?? 0,
+            photo_url:   c.photo_url,
+            vote_count:  candidateVotes.get(c.id) ?? 0,
             position_id: pos.id,
           });
         });
@@ -122,7 +151,7 @@ export default function LiveVotingClient({
   }, []);
 
   const turnoutPct = stats.totalVoters
-    ? Math.round((stats.voted / stats.totalVoters) * 100)
+    ? Math.min(100, Math.round((stats.voted / stats.totalVoters) * 100))
     : 0;
 
   const filteredPositions = positions.filter((p) =>
@@ -192,6 +221,24 @@ export default function LiveVotingClient({
         ))}
       </div>
 
+      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "14px", overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #eef2f6", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+          <div>
+            <h2 style={{ margin: 0, color: "#173b2a", fontSize: "15px", fontWeight: 800 }}>Voter Participation</h2>
+            <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>Shows who has submitted a ballot without exposing individual choices.</p>
+          </div>
+          <span style={{ color: "#0d6b34", background: "#ecfdf3", borderRadius: "999px", padding: "5px 11px", fontSize: "12px", fontWeight: 800 }}>{stats.voted} of {stats.totalVoters} participated</span>
+        </div>
+        <div style={{ maxHeight: "220px", overflowY: "auto", padding: "8px 20px" }}>
+          {participants.length === 0 ? <p style={{ color: "#64748b", fontSize: "13px" }}>No eligible voters are registered.</p> : participants.map((participant) => (
+            <div key={participant.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "9px 0", borderBottom: "1px solid #f1f5f9" }}>
+              <span style={{ color: "#1e293b", fontSize: "13px", fontWeight: 650 }}>{participant.full_name}</span>
+              <span style={{ color: participant.hasVoted ? "#15803d" : "#b45309", background: participant.hasVoted ? "#dcfce7" : "#fef3c7", borderRadius: "999px", padding: "3px 9px", fontSize: "11px", fontWeight: 800 }}>{participant.hasVoted ? "Ballot submitted" : currentPhase === "voting" ? "Not yet voted" : currentPhase === "upcoming" ? "Voting not open" : "Did not vote"}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Vote Panel — phase aware */}
       {currentPhase === "voting" ? (
 
@@ -234,23 +281,28 @@ export default function LiveVotingClient({
                 .filter((c) => c.position_id === pos.id)
                 .sort((a, b) => b.vote_count - a.vote_count);
               const maxVotes      = Math.max(1, ...posCands.map((c) => c.vote_count));
-              const totalPosVotes = posCands.reduce((sum, c) => sum + c.vote_count, 0);
+              const positionBallots = ballots[pos.id] ?? { total: 0, abstentions: 0 };
+              const totalPosVotes = positionBallots.total;
               return (
                 <div key={pos.id}>
                   <div style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.07em", textTransform: "uppercase", paddingBottom: "10px", borderBottom: "1px solid rgba(255,255,255,0.08)", marginBottom: "14px" }}>
                     {pos.name}
                   </div>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", margin: "-4px 0 12px" }}>
+                    <span style={{ padding: "5px 9px", borderRadius: "7px", background: "rgba(255,255,255,.08)", color: "rgba(255,255,255,.75)", fontSize: "11px", fontWeight: 700 }}>{positionBallots.total} ballots</span>
+                    <span style={{ padding: "5px 9px", borderRadius: "7px", background: "rgba(251,191,36,.12)", color: "#fcd34d", fontSize: "11px", fontWeight: 700 }}>{positionBallots.abstentions} abstained</span>
+                  </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "14px" }}>
                     {posCands.length === 0 ? (
                       <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.3)" }}>No approved candidates.</p>
                     ) : posCands.map((c, i) => {
-                      const pct      = totalPosVotes > 0 ? Math.round((c.vote_count / totalPosVotes) * 100) : 0;
+                      const pct      = totalPosVotes > 0 ? Math.min(100, Math.round((c.vote_count / totalPosVotes) * 100)) : 0;
                       const barW     = Math.round((c.vote_count / maxVotes) * 100);
                       const isLeading = i === 0 && c.vote_count > 0;
                       return (
                         <div key={c.id} style={{ background: "#0f1f14", borderRadius: "14px", padding: "20px 14px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", border: "1.5px solid rgba(255,255,255,0.07)" }}>
-                          <div style={{ width: "60px", height: "60px", borderRadius: "50%", background: "rgba(255,255,255,0.12)", border: "2px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 700, color: "#fff" }}>
-                            {getInitials(c.full_name)}
+                          <div style={{ width: "60px", height: "60px", borderRadius: "50%", background: "rgba(255,255,255,0.12)", border: "2px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 700, color: "#fff", overflow: "hidden", position: "relative" }}>
+                            {c.photo_url ? <Image src={c.photo_url} alt={c.full_name} fill unoptimized style={{ objectFit: "cover" }} /> : getInitials(c.full_name)}
                           </div>
                           <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", textAlign: "center", lineHeight: 1.3 }}>{c.full_name}</div>
                           <div style={{ fontFamily: "var(--font-oswald), sans-serif", fontSize: "36px", fontWeight: 700, color: isLeading ? "#4ade80" : "rgba(255,255,255,0.4)", lineHeight: 1 }}>

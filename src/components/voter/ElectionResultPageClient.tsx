@@ -24,6 +24,8 @@ type Props = {
   voteMap: Record<string, number>;
   abstainMap: Record<string, number>;
   totalVoters: number;
+  participatedVoters: number;
+  ballotCount: number;
   phase: string;
   electionTitle: string;
 };
@@ -47,7 +49,7 @@ function ResultCard({
   index,
   voteCount,
   abstainCount,
-  totalVoters,
+  totalPositionBallots,
   isWinner,
   isOnlyCandidate,
 }: {
@@ -55,13 +57,12 @@ function ResultCard({
   index: number;
   voteCount: number;
   abstainCount: number;
-  totalVoters: number;
+  totalPositionBallots: number;
   isWinner: boolean;
   isOnlyCandidate: boolean;
 }) {
   const frameColor  = getFrameColor(index);
-  const totalVotes  = totalVoters;
-  const voteDisplay = `${voteCount}/${totalVotes} Votes`;
+  const votePct = totalPositionBallots > 0 ? Math.min(100, Math.round((voteCount / totalPositionBallots) * 100)) : 0;
 
   return (
     <div style={{
@@ -151,7 +152,7 @@ function ResultCard({
           borderTop: "1px solid #e2e8f0",
           paddingTop: "4px", marginTop: "2px",
         }}>
-          {voteDisplay}
+          {votePct}% of ballots
         </div>
       </div>
 
@@ -179,6 +180,8 @@ export default function ElectionResultPageClient({
   voteMap,
   abstainMap,
   totalVoters,
+  participatedVoters,
+  ballotCount,
   phase,
   electionTitle,
 }: Props) {
@@ -231,8 +234,7 @@ export default function ElectionResultPageClient({
 
   // ── Results UI (phase === "closed" or "results") ──────────────────────────
 
-  const totalVotesCast = Object.values(voteMap).reduce((a, b) => a + b, 0);
-  const turnoutPct     = totalVoters > 0 ? Math.round((totalVotesCast / totalVoters) * 100) : 0;
+  const turnoutPct = totalVoters > 0 ? Math.min(100, Math.round((participatedVoters / totalVoters) * 100)) : 0;
 
   return (
     <div
@@ -266,7 +268,8 @@ export default function ElectionResultPageClient({
         }}>
           {[
             { label: "Total Voters",  value: totalVoters     },
-            { label: "Votes Cast",    value: totalVotesCast  },
+            { label: "Voters Participated", value: participatedVoters },
+            { label: "Ballots Recorded", value: ballotCount },
             { label: "Turnout",       value: `${turnoutPct}%`},
           ].map(({ label, value }) => (
             <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
@@ -312,6 +315,7 @@ export default function ElectionResultPageClient({
         const hasVotes       = maxVotes > 0;
         const isOnlyOne      = posCandidates.length === 1;
         const posAbstains    = abstainMap[pos.id] ?? 0;
+        const totalPositionBallots = posCandidates.reduce((sum, candidate) => sum + (voteMap[candidate.id] ?? 0), 0) + posAbstains;
 
         return (
           <div key={pos.id} style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
@@ -346,7 +350,7 @@ export default function ElectionResultPageClient({
                     index={i}
                     voteCount={votes}
                     abstainCount={posAbstains}
-                    totalVoters={totalVoters}
+                    totalPositionBallots={totalPositionBallots}
                     isWinner={isWinner}
                     isOnlyCandidate={isOnlyOne}
                   />
